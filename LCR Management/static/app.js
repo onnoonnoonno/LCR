@@ -237,6 +237,7 @@ async function uploadFile() {
   const file = fileInputEl.files?.[0] || pendingFile;
   if (!file) {
     setMessage("Select an .xlsx file first.", true);
+    fileInputEl.click();
     return;
   }
   if (!file.name.toLowerCase().endsWith(".xlsx")) {
@@ -296,6 +297,9 @@ fileInputEl.addEventListener("change", () => {
   if (file) {
     pendingFile = null;
     latestStatusEl.textContent = file.name;
+    uploadFile().catch((err) => {
+      setStatus("error", err.message || "Upload failed.");
+    });
   }
 });
 
