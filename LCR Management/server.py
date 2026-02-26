@@ -133,6 +133,11 @@ def resolve_base_template() -> Path:
 
 
 def process_workbook(upload_file: Path, output_file: Path, date_key: str) -> None:
+    if os.name != "nt":
+        raise RuntimeError(
+            "Workbook processing requires Windows + Microsoft Excel. "
+            "Current host is non-Windows."
+        )
     template_file = resolve_base_template()
     serial = excel_serial_from_date(date_key)
     ps_script = r"""
