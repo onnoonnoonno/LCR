@@ -18,6 +18,7 @@ let selectedDate = null;
 
 function setMessage(text, isError = false) {
   setStatus(isError ? "error" : "ready", text);
+  latestTimeEl.textContent = isError ? `Error: ${text}` : text;
 }
 
 function setStatus(state, text) {
@@ -267,7 +268,9 @@ async function uploadFile() {
     pendingFile = null;
     await refreshLatest(true);
   } catch (err) {
-    setMessage(err.message || "Upload failed.", true);
+    const msg = err.message || "Upload failed.";
+    latestStatusEl.textContent = "Upload failed";
+    setMessage(msg, true);
   } finally {
     uploadBtnEl.disabled = false;
   }
