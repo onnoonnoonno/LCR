@@ -221,7 +221,8 @@ async function refreshLatest(force = false) {
   }
 
   latestStatusEl.textContent = data.filename || "latest.xlsx";
-  latestTimeEl.textContent = `Uploaded: ${data.uploadedAt || "-"}`;
+  const modeText = data.processingMode ? ` [${data.processingMode}]` : "";
+  latestTimeEl.textContent = `Uploaded: ${data.uploadedAt || "-"}${modeText}`;
   sbLatestEl.textContent = `Latest: ${data.selectedDate || data.filename || "latest.xlsx"}`;
 
   const newKey = `${data.selectedDate || ""}:${data.contentHash || ""}`;
