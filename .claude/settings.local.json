@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install)",
+      "Bash(where node)",
+      "Bash(cmd /c \"where node 2>&1\")",
+      "Bash(powershell -Command \"Get-Command node 2>&1\")",
+      "Bash(grep -r \"from ''../types/lcr''\" \"c:/Users/Jay Yoon/Desktop/LCR/lcr-web/backend/src\" --include=\"*.ts\" -l)",
+      "Bash(grep -r \"from ''../types/bs-re33''\" \"c:/Users/Jay Yoon/Desktop/LCR/lcr-web/backend/src\" --include=\"*.ts\" -l)",
+      "Bash(node -e \":*)",
+      "Bash(npx ts-node -e \":*)",
+      "Read(//usr/local/**)",
+      "Read(//usr/**)",
+      "Bash(command -v node)"
+    ]
+  }
+}
