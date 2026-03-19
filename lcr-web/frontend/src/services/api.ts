@@ -128,7 +128,6 @@ export async function uploadRaw(file: File, reportDate?: string): Promise<Upload
   const res = await fetch(`${base()}/api/upload-raw`, {
     method: 'POST',
     body: formData,
-    credentials: 'include',
   });
   return handleResponse<UploadRawResponse>(res);
 }
@@ -144,7 +143,7 @@ export async function fetchRawRows(
     page: String(page),
     pageSize: String(pageSize),
   });
-  const res = await fetch(`${base()}/api/raw-rows?${params}`, { credentials: 'include' });
+  const res = await fetch(`${base()}/api/raw-rows?${params}`);
   return handleResponse<RawRowsResponse>(res);
 }
 
@@ -228,7 +227,7 @@ export async function fetchColumnL(
     page: String(page),
     pageSize: String(pageSize),
   });
-  const res = await fetch(`${base()}/api/verify/column-l?${params}`, { credentials: 'include' });
+  const res = await fetch(`${base()}/api/verify/column-l?${params}`);
   return handleResponse<ColumnLResponse>(res);
 }
 
@@ -282,7 +281,7 @@ export interface LmgSummaryResponse {
 /** Fetch LMG summary aggregation for a given report run. */
 export async function fetchLmgSummary(runId: string): Promise<LmgSummaryResponse> {
   const params = new URLSearchParams({ runId });
-  const res = await fetch(`${base()}/api/verify/lmg-summary?${params}`, { credentials: 'include' });
+  const res = await fetch(`${base()}/api/verify/lmg-summary?${params}`);
   return handleResponse<LmgSummaryResponse>(res);
 }
 
@@ -315,7 +314,7 @@ export async function fetchGapForecast(
   type: '7day' | '1month' | '3month' = '7day',
 ): Promise<ForecastResponse> {
   const params = new URLSearchParams({ runId, type });
-  const res = await fetch(`${base()}/api/verify/gap-forecast?${params}`, { credentials: 'include' });
+  const res = await fetch(`${base()}/api/verify/gap-forecast?${params}`);
   return handleResponse<ForecastResponse>(res);
 }
 
@@ -343,7 +342,7 @@ export interface CfTableResponse {
 /** Fetch 30-day CF Table for a given report run. */
 export async function fetchCfTable(runId: string): Promise<CfTableResponse> {
   const params = new URLSearchParams({ runId });
-  const res = await fetch(`${base()}/api/verify/cf-table?${params}`, { credentials: 'include' });
+  const res = await fetch(`${base()}/api/verify/cf-table?${params}`);
   return handleResponse<CfTableResponse>(res);
 }
 
@@ -381,7 +380,7 @@ export async function fetchBsRe33(
   pageSize = 100,
 ): Promise<BsRe33Response> {
   const params = new URLSearchParams({ runId, page: String(page), pageSize: String(pageSize) });
-  const res = await fetch(`${base()}/api/debug/bs-re33?${params}`, { credentials: 'include' });
+  const res = await fetch(`${base()}/api/debug/bs-re33?${params}`);
   return handleResponse<BsRe33Response>(res);
 }
 
@@ -405,7 +404,6 @@ export async function fetchRawCells(file: File): Promise<RawCellsResponse> {
   const res = await fetch(`${base()}/api/debug/raw-cells`, {
     method: 'POST',
     body: formData,
-    credentials: 'include',
   });
   return handleResponse<RawCellsResponse>(res);
 }
@@ -419,7 +417,7 @@ export async function fetchAccountMappings(
     page: String(page),
     pageSize: String(pageSize),
   });
-  const res = await fetch(`${base()}/api/account-mappings?${params}`, { credentials: 'include' });
+  const res = await fetch(`${base()}/api/account-mappings?${params}`);
   return handleResponse<AccountMappingResponse>(res);
 }
 
@@ -430,21 +428,20 @@ export async function uploadAndProcess(file: File): Promise<UploadResponse> {
   const res = await fetch(`${base()}/api/upload`, {
     method: 'POST',
     body: formData,
-    credentials: 'include',
   });
   return handleResponse<UploadResponse>(res);
 }
 
 /** List all available report dates with summary snapshots. */
 export async function listHistory(): Promise<{ items: HistoryItem[] }> {
-  const res = await fetch(`${base()}/api/history`, { credentials: 'include' });
+  const res = await fetch(`${base()}/api/history`);
   return handleResponse<{ items: HistoryItem[] }>(res);
 }
 
 /** Get the full summary for a specific report date. */
 export async function getSummaryByDate(date: string): Promise<{ summary: SummaryRecord }> {
   const params = new URLSearchParams({ date });
-  const res = await fetch(`${base()}/api/summary?${params}`, { credentials: 'include' });
+  const res = await fetch(`${base()}/api/summary?${params}`);
   return handleResponse<{ summary: SummaryRecord }>(res);
 }
 
@@ -461,11 +458,11 @@ export interface LatestRunResponse {
 }
 
 export async function fetchLatestRun(): Promise<LatestRunResponse> {
-  const res = await fetch(`${base()}/api/latest-run`, { credentials: 'include' });
+  const res = await fetch(`${base()}/api/latest-run`);
   return handleResponse<LatestRunResponse>(res);
 }
 
 export async function checkHealth(): Promise<{ status: string }> {
-  const res = await fetch(`${base()}/api/health`, { credentials: 'include' });
+  const res = await fetch(`${base()}/api/health`);
   return handleResponse<{ status: string }>(res);
 }
