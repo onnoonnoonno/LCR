@@ -9,41 +9,15 @@ const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
 
 // ---------------------------------------------------------------------------
-// CORS — allow all Render subdomains + localhost for dev
+// CORS — OPEN FOR TEST (temporary)
 // ---------------------------------------------------------------------------
-app.use(
-  cors({
-    origin: (origin, cb) => {
-      console.log('[CORS] Origin:', origin);
-
-      // Allow requests with no origin (server-to-server, curl, Postman, etc.)
-      if (!origin) return cb(null, true);
-
-      try {
-        const url = new URL(origin);
-        const hostname = url.hostname;
-
-        // Allow Render frontend domains
-        if (hostname.endsWith('.onrender.com')) {
-          return cb(null, true);
-        }
-
-        // Allow localhost for dev
-        if (url.protocol === 'http:' && hostname === 'localhost') {
-          return cb(null, true);
-        }
-
-        return cb(new Error(`CORS: origin '${origin}' not allowed`));
-      } catch {
-        return cb(new Error(`CORS: invalid origin '${origin}'`));
-      }
-    },
-    credentials: true,
-  })
-);
-
-// Handle preflight requests
+app.use(cors());
 app.options('*', cors());
+
+app.use((req, _res, next) => {
+  console.log(`[REQ] ${req.method} ${req.originalUrl} Origin=${req.headers.origin ?? 'none'}`);
+  next();
+});
 
 // ---------------------------------------------------------------------------
 // Body parsing
@@ -87,7 +61,7 @@ app.use(
 // ---------------------------------------------------------------------------
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`[lcr-web] Backend listening on http://0.0.0.0:${PORT}`);
-  console.log(`[lcr-web] CORS: *.onrender.com + http://localhost:*`);
+  console.log(`[lcr-web] CORS: OPEN FOR TEST`);
   console.log(`[lcr-web] NODE_ENV: ${process.env.NODE_ENV ?? 'development'}`);
 });
 
