@@ -9,13 +9,23 @@ const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
 
 // ---------------------------------------------------------------------------
+// DEPLOYMENT MARKER
+// ---------------------------------------------------------------------------
+console.log('=== BACKEND FROM LCR_REPO / TEST 001 ===');
+
+// ---------------------------------------------------------------------------
 // CORS — OPEN FOR TEST (temporary)
 // ---------------------------------------------------------------------------
 app.use(cors());
 app.options('*', cors());
 
+// ---------------------------------------------------------------------------
+// Request logging
+// ---------------------------------------------------------------------------
 app.use((req, _res, next) => {
-  console.log(`[REQ] ${req.method} ${req.originalUrl} Origin=${req.headers.origin ?? 'none'}`);
+  console.log(
+    `[REQ] ${req.method} ${req.originalUrl} Origin=${req.headers.origin ?? 'none'}`
+  );
   next();
 });
 
@@ -35,6 +45,16 @@ app.set('trust proxy', 1);
 // ---------------------------------------------------------------------------
 const db = getDb();
 seedReferenceData(db);
+
+// ---------------------------------------------------------------------------
+// Test route
+// ---------------------------------------------------------------------------
+app.get('/api/cors-test', (_req, res) => {
+  res.json({
+    ok: true,
+    message: 'cors test route from LCR_repo',
+  });
+});
 
 // ---------------------------------------------------------------------------
 // Routes
