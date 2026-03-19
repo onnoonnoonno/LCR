@@ -10,7 +10,7 @@ import path from 'path';
 import fs from 'fs';
 import Database from 'better-sqlite3';
 
-const DATA_DIR = path.join(__dirname, '..', 'reference', 'data');
+const DATA_DIR = path.join(process.cwd(), 'src', 'reference', 'data');
 
 // ---------------------------------------------------------------------------
 // Helper: load + strip comment entries from a JSON file
