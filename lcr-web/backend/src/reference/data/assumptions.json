@@ -1,0 +1,250 @@
+[
+  {
+    "pKey": "HQLA_Australian State Government or Territory Central Borrowing Authorities",
+    "assumptionRate": 1
+  },
+  {
+    "pKey": "HQLA_Issued or guaranteed by PSEs",
+    "assumptionRate": 1
+  },
+  {
+    "pKey": "Deposit_Asset(Our)_",
+    "assumptionRate": 1
+  },
+  {
+    "pKey": "Deposit_Asset_",
+    "assumptionRate": 1
+  },
+  {
+    "pKey": "Trade Finance_Asset_",
+    "assumptionRate": 1
+  },
+  {
+    "pKey": "Loan_Household",
+    "assumptionRate": 0.5
+  },
+  {
+    "pKey": "Loan_SME",
+    "assumptionRate": 0.5
+  },
+  {
+    "pKey": "Loan_Non-financialcorporations",
+    "assumptionRate": 0.5
+  },
+  {
+    "pKey": "Loan_Advance(Loan Guarantee)",
+    "assumptionRate": 0.5
+  },
+  {
+    "pKey": "Loan_Private placement-Corp Bonds",
+    "assumptionRate": 0.5
+  },
+  {
+    "pKey": "Loan_EUBB",
+    "assumptionRate": 1
+  },
+  {
+    "pKey": "Loan_Financialinstitutions",
+    "assumptionRate": 1
+  },
+  {
+    "pKey": "Derivative_Asset_",
+    "assumptionRate": 1
+  },
+  {
+    "pKey": "Inter-office_Asset (inter-office A)_",
+    "assumptionRate": 1
+  },
+  {
+    "pKey": "Inter-office_Asset (inter-office (EUBB))_",
+    "assumptionRate": 1
+  },
+  {
+    "pKey": "Other_Asset (Receivable)_",
+    "assumptionRate": 1
+  },
+  {
+    "pKey": "Other_Asset (Accrued Incomes)_",
+    "assumptionRate": 1
+  },
+  {
+    "pKey": "Other_Asset (Other assets)_",
+    "assumptionRate": 0
+  },
+  {
+    "pKey": "Other_Asset (Fixed assets)_",
+    "assumptionRate": 0
+  },
+  {
+    "pKey": "Other_Asset (Lease)_",
+    "assumptionRate": 0
+  },
+  {
+    "pKey": "OFF_Ccy. Forward Buy (Outright Forward)_",
+    "assumptionRate": 1
+  },
+  {
+    "pKey": "OFF_IRS Buy (Trade)_",
+    "assumptionRate": 0
+  },
+  {
+    "pKey": "OFF_IRS Buy (I/O)_",
+    "assumptionRate": 0
+  },
+  {
+    "pKey": "On-demand Deposit_Household",
+    "assumptionRate": 0.25
+  },
+  {
+    "pKey": "On-demand Deposit_SME",
+    "assumptionRate": 0.25
+  },
+  {
+    "pKey": "On-demand Deposit_Non-financialcorporations",
+    "assumptionRate": 0.25
+  },
+  {
+    "pKey": "On-demand Deposit_Other Institution",
+    "assumptionRate": 0.25
+  },
+  {
+    "pKey": "On-demand Deposit_Financialinstitutions",
+    "assumptionRate": 0.25
+  },
+  {
+    "pKey": "Other deposit (Time deposit)_Household",
+    "assumptionRate": 0.25
+  },
+  {
+    "pKey": "Other deposit (Time deposit)_SME",
+    "assumptionRate": 0.25
+  },
+  {
+    "pKey": "Other deposit (Time deposit)_Non-financialcorporations",
+    "assumptionRate": 0.4
+  },
+  {
+    "pKey": "Other deposit (Time deposit)_Other Institution",
+    "assumptionRate": 1
+  },
+  {
+    "pKey": "Other deposit (Time deposit)_Financialinstitutions",
+    "assumptionRate": 1
+  },
+  {
+    "pKey": "Deposit (Certificate of Deposit)_",
+    "assumptionRate": 1
+  },
+  {
+    "pKey": "Deposit (Term Certificate of Deposit)_",
+    "assumptionRate": 1
+  },
+  {
+    "pKey": "Borrowing (Short term borrowoing)_",
+    "assumptionRate": 1
+  },
+  {
+    "pKey": "Borrowing (Long term borrowoing)_",
+    "assumptionRate": 1
+  },
+  {
+    "pKey": "Bond issued_",
+    "assumptionRate": 1
+  },
+  {
+    "pKey": "Derivative_Liability_",
+    "assumptionRate": 1
+  },
+  {
+    "pKey": "Inter-office (Inter-office A/Paid-in capital)_",
+    "assumptionRate": 1
+  },
+  {
+    "pKey": "Inter-office (Inter-office A)_",
+    "assumptionRate": 1
+  },
+  {
+    "pKey": "Inter-office (Inter-office borrowing-short term)_",
+    "assumptionRate": 1
+  },
+  {
+    "pKey": "Other_Liability (Payable)_",
+    "assumptionRate": 1
+  },
+  {
+    "pKey": "Other_Liability (Accrued Expenses)_",
+    "assumptionRate": 1
+  },
+  {
+    "pKey": "Other_Liability (Other liabilities)_",
+    "assumptionRate": 0
+  },
+  {
+    "pKey": "Other_Liability (Unearned Incomes)_",
+    "assumptionRate": 0
+  },
+  {
+    "pKey": "Other_Liability (Lease)_",
+    "assumptionRate": 0
+  },
+  {
+    "pKey": "Other_Liability (Provision)_",
+    "assumptionRate": 0
+  },
+  {
+    "pKey": "Other_Liability (Position)_",
+    "assumptionRate": 0
+  },
+  {
+    "pKey": "Equity_",
+    "assumptionRate": 0
+  },
+  {
+    "pKey": "OFF_LC Issued_",
+    "assumptionRate": 0
+  },
+  {
+    "pKey": "OFF_Acceptance, etc_",
+    "assumptionRate": 0
+  },
+  {
+    "pKey": "OFF_Other Guarantee_",
+    "assumptionRate": 0
+  },
+  {
+    "pKey": "OFF_Unused Loan Commitment_Household",
+    "assumptionRate": 0.05
+  },
+  {
+    "pKey": "OFF_Unused Loan Commitment_SME",
+    "assumptionRate": 0.05
+  },
+  {
+    "pKey": "OFF_Unused Loan Commitment_Non-financialcorporations",
+    "assumptionRate": 0.1
+  },
+  {
+    "pKey": "OFF_Unused Loan Commitment_Financialinstitutions",
+    "assumptionRate": 0.4
+  },
+  {
+    "pKey": "OFF_Ccy. Forward Sell (Unsettled Forward among FX swaps)_",
+    "assumptionRate": 1
+  },
+  {
+    "pKey": "OFF_Contract on Securities_",
+    "assumptionRate": 1
+  },
+  {
+    "pKey": "OFF_IRS Sell (Trade)_",
+    "assumptionRate": 0
+  },
+  {
+    "pKey": "OFF_IRS Sell (I/O)_",
+    "assumptionRate": 0
+  },
+  {
+    "pKey": "OFF_Other_",
+    "assumptionRate": 0
+  }
+]

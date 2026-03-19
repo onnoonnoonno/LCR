@@ -1,0 +1,112 @@
+[
+  {
+    "counterpartyNo": "0100000003",
+    "customerType": "Non-financialcorporations",
+    "description": "COSMAX NBT AUSTRALIA PTY LTD"
+  },
+  {
+    "counterpartyNo": "0100000014",
+    "customerType": "Non-financialcorporations",
+    "description": "PERDAMAN CHEMICALS & FERTILISERS (FINANCE)PTY LTD"
+  },
+  {
+    "counterpartyNo": "0100000017",
+    "customerType": "Non-financialcorporations",
+    "description": "KORES AUSTRALIA PTY LTD"
+  },
+  {
+    "counterpartyNo": "0100000007",
+    "customerType": "Financialinstitutions",
+    "description": "CHINA EVERBRIGHT BANK CO. LTD"
+  },
+  {
+    "counterpartyNo": "0100000008",
+    "customerType": "Financialinstitutions",
+    "description": "E.SUN COMMERCIAL BANK LTD"
+  },
+  {
+    "counterpartyNo": "0100000020",
+    "customerType": "Non-financialcorporations",
+    "description": "APA INFRASTRUCTURE LIMITED"
+  },
+  {
+    "counterpartyNo": "0100000026",
+    "customerType": "Non-financialcorporations",
+    "description": "PT.NH KORINDO SEKURITAS INDONESIA"
+  },
+  {
+    "counterpartyNo": "0100000028",
+    "customerType": "Financialinstitutions",
+    "description": "MACQUARIE INTERNATIONAL FINANCIAL LIMITED"
+  },
+  {
+    "counterpartyNo": "0100000032",
+    "customerType": "Non-financialcorporations",
+    "description": "KORES NARRABRI PTY LIMITED"
+  },
+  {
+    "counterpartyNo": "0100000031",
+    "customerType": "Non-financialcorporations",
+    "description": "ORIGIN ENERGY LIMITED"
+  },
+  {
+    "counterpartyNo": "0100000033",
+    "customerType": "Financialinstitutions",
+    "description": "MACQUARIE GROUP LIMITED"
+  },
+  {
+    "counterpartyNo": "0100000035",
+    "customerType": "Non-financialcorporations",
+    "description": "NEXTDC LIMITED"
+  },
+  {
+    "counterpartyNo": "0100000039",
+    "customerType": "Non-financialcorporations",
+    "description": "QANTAS AIRWAYS LIMITED"
+  },
+  {
+    "counterpartyNo": "0100000041",
+    "customerType": "Non-financialcorporations",
+    "description": "POSCO AUSTRALIA PTY LTD"
+  },
+  {
+    "counterpartyNo": "0100000040",
+    "customerType": "Non-financialcorporations",
+    "description": "DOWNER GROUP FINANCE PTY LIMITED"
+  },
+  {
+    "counterpartyNo": "0100000022",
+    "customerType": "Financialinstitutions",
+    "description": "QUEENSLAND COUNTRY BANK LIMITED"
+  },
+  {
+    "counterpartyNo": "0100000044",
+    "customerType": "Financialinstitutions",
+    "description": "MYSTATE BANK LIMITED"
+  },
+  {
+    "counterpartyNo": "0100000012",
+    "customerType": "Australian State Government or Territory Central Borrowing Authorities",
+    "description": "FIIG SECURITIES LIMITED"
+  },
+  {
+    "counterpartyNo": "0100000027",
+    "customerType": "Australian State Government or Territory Central Borrowing Authorities",
+    "description": "TREASURY CORPORATION OF VICTORIA"
+  },
+  {
+    "counterpartyNo": "0100000034",
+    "customerType": "Australian State Government or Territory Central Borrowing Authorities",
+    "description": "WESTERN AUSTRALIAN TREASURY CORPORATION"
+  },
+  {
+    "counterpartyNo": "0100000038",
+    "customerType": "Australian State Government or Territory Central Borrowing Authorities",
+    "description": "TASMANIAN PUBLIC FINANCE CORPORATION"
+  },
+  {
+    "counterpartyNo": "0100000037",
+    "customerType": "Issued or guaranteed by PSEs",
+    "description": "THE EXPORT-IMPORT BANK OF KOREA"
+  }
+]

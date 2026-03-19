@@ -1,0 +1,500 @@
+[
+  {
+    "acCode": "10310001",
+    "formulaType": "tomorrow",
+    "formulaParams": null,
+    "reason": ""
+  },
+  {
+    "acCode": "10310002",
+    "formulaType": "tomorrow",
+    "formulaParams": null,
+    "reason": ""
+  },
+  {
+    "acCode": "10310003",
+    "formulaType": "tomorrow",
+    "formulaParams": null,
+    "reason": ""
+  },
+  {
+    "acCode": "10690001",
+    "formulaType": "far_future",
+    "formulaParams": null,
+    "reason": ""
+  },
+  {
+    "acCode": "10690002",
+    "formulaType": "far_future",
+    "formulaParams": null,
+    "reason": ""
+  },
+  {
+    "acCode": "10690003",
+    "formulaType": "far_future",
+    "formulaParams": null,
+    "reason": ""
+  },
+  {
+    "acCode": "10690004",
+    "formulaType": "far_future",
+    "formulaParams": null,
+    "reason": ""
+  },
+  {
+    "acCode": "10690005",
+    "formulaType": "far_future",
+    "formulaParams": null,
+    "reason": ""
+  },
+  {
+    "acCode": "10690006",
+    "formulaType": "far_future",
+    "formulaParams": null,
+    "reason": ""
+  },
+  {
+    "acCode": "10690007",
+    "formulaType": "far_future",
+    "formulaParams": null,
+    "reason": ""
+  },
+  {
+    "acCode": "10690008",
+    "formulaType": "far_future",
+    "formulaParams": null,
+    "reason": ""
+  },
+  {
+    "acCode": "10920004",
+    "formulaType": "year_end",
+    "formulaParams": null,
+    "reason": "DATE(YEAR(BS_RE33!$N$4),12,31)"
+  },
+  {
+    "acCode": "10920011",
+    "formulaType": "eomonth_plus_N",
+    "formulaParams": {
+      "days": 21
+    },
+    "reason": "EOMONTH(BS_RE33!$N$4,0)+21"
+  },
+  {
+    "acCode": "10991001",
+    "formulaType": "eomonth_plus_N",
+    "formulaParams": {
+      "days": 60
+    },
+    "reason": "EOMONTH(BS_RE33!$N$4,0)+60"
+  },
+  {
+    "acCode": "10999002",
+    "formulaType": "far_future",
+    "formulaParams": null,
+    "reason": ""
+  },
+  {
+    "acCode": "12110002",
+    "formulaType": "far_future",
+    "formulaParams": null,
+    "reason": ""
+  },
+  {
+    "acCode": "12110003",
+    "formulaType": "far_future",
+    "formulaParams": null,
+    "reason": ""
+  },
+  {
+    "acCode": "12110004",
+    "formulaType": "far_future",
+    "formulaParams": null,
+    "reason": ""
+  },
+  {
+    "acCode": "12110005",
+    "formulaType": "far_future",
+    "formulaParams": null,
+    "reason": ""
+  },
+  {
+    "acCode": "12120001",
+    "formulaType": "far_future",
+    "formulaParams": null,
+    "reason": ""
+  },
+  {
+    "acCode": "12120003",
+    "formulaType": "far_future",
+    "formulaParams": null,
+    "reason": ""
+  },
+  {
+    "acCode": "12120004",
+    "formulaType": "far_future",
+    "formulaParams": null,
+    "reason": ""
+  },
+  {
+    "acCode": "12130001",
+    "formulaType": "far_future",
+    "formulaParams": null,
+    "reason": ""
+  },
+  {
+    "acCode": "12310002",
+    "formulaType": "far_future",
+    "formulaParams": null,
+    "reason": ""
+  },
+  {
+    "acCode": "12310003",
+    "formulaType": "far_future",
+    "formulaParams": null,
+    "reason": ""
+  },
+  {
+    "acCode": "12310004",
+    "formulaType": "far_future",
+    "formulaParams": null,
+    "reason": ""
+  },
+  {
+    "acCode": "12310005",
+    "formulaType": "far_future",
+    "formulaParams": null,
+    "reason": ""
+  },
+  {
+    "acCode": "12320001",
+    "formulaType": "far_future",
+    "formulaParams": null,
+    "reason": ""
+  },
+  {
+    "acCode": "12320003",
+    "formulaType": "far_future",
+    "formulaParams": null,
+    "reason": ""
+  },
+  {
+    "acCode": "12330001",
+    "formulaType": "far_future",
+    "formulaParams": null,
+    "reason": ""
+  },
+  {
+    "acCode": "13101001",
+    "formulaType": "far_future",
+    "formulaParams": null,
+    "reason": ""
+  },
+  {
+    "acCode": "15100002",
+    "formulaType": "tomorrow",
+    "formulaParams": null,
+    "reason": ""
+  },
+  {
+    "acCode": "18800002",
+    "formulaType": "year_end",
+    "formulaParams": null,
+    "reason": "DATE(YEAR(BS_RE33!$N$4),12,31)"
+  },
+  {
+    "acCode": "20920001",
+    "formulaType": "far_future",
+    "formulaParams": null,
+    "reason": ""
+  },
+  {
+    "acCode": "20920002",
+    "formulaType": "far_future",
+    "formulaParams": null,
+    "reason": ""
+  },
+  {
+    "acCode": "20920003",
+    "formulaType": "far_future",
+    "formulaParams": null,
+    "reason": ""
+  },
+  {
+    "acCode": "20920004",
+    "formulaType": "far_future",
+    "formulaParams": null,
+    "reason": ""
+  },
+  {
+    "acCode": "20920005",
+    "formulaType": "far_future",
+    "formulaParams": null,
+    "reason": ""
+  },
+  {
+    "acCode": "20920006",
+    "formulaType": "far_future",
+    "formulaParams": null,
+    "reason": ""
+  },
+  {
+    "acCode": "20920007",
+    "formulaType": "far_future",
+    "formulaParams": null,
+    "reason": ""
+  },
+  {
+    "acCode": "20920008",
+    "formulaType": "far_future",
+    "formulaParams": null,
+    "reason": ""
+  },
+  {
+    "acCode": "20920009",
+    "formulaType": "far_future",
+    "formulaParams": null,
+    "reason": ""
+  },
+  {
+    "acCode": "20920011",
+    "formulaType": "far_future",
+    "formulaParams": null,
+    "reason": ""
+  },
+  {
+    "acCode": "20920012",
+    "formulaType": "far_future",
+    "formulaParams": null,
+    "reason": ""
+  },
+  {
+    "acCode": "20920013",
+    "formulaType": "far_future",
+    "formulaParams": null,
+    "reason": ""
+  },
+  {
+    "acCode": "20920014",
+    "formulaType": "far_future",
+    "formulaParams": null,
+    "reason": ""
+  },
+  {
+    "acCode": "20920015",
+    "formulaType": "far_future",
+    "formulaParams": null,
+    "reason": ""
+  },
+  {
+    "acCode": "20920016",
+    "formulaType": "far_future",
+    "formulaParams": null,
+    "reason": ""
+  },
+  {
+    "acCode": "20920017",
+    "formulaType": "far_future",
+    "formulaParams": null,
+    "reason": ""
+  },
+  {
+    "acCode": "20920018",
+    "formulaType": "far_future",
+    "formulaParams": null,
+    "reason": ""
+  },
+  {
+    "acCode": "20920019",
+    "formulaType": "far_future",
+    "formulaParams": null,
+    "reason": ""
+  },
+  {
+    "acCode": "20920021",
+    "formulaType": "far_future",
+    "formulaParams": null,
+    "reason": ""
+  },
+  {
+    "acCode": "20920022",
+    "formulaType": "far_future",
+    "formulaParams": null,
+    "reason": ""
+  },
+  {
+    "acCode": "20920023",
+    "formulaType": "far_future",
+    "formulaParams": null,
+    "reason": ""
+  },
+  {
+    "acCode": "20920024",
+    "formulaType": "far_future",
+    "formulaParams": null,
+    "reason": ""
+  },
+  {
+    "acCode": "20920025",
+    "formulaType": "far_future",
+    "formulaParams": null,
+    "reason": ""
+  },
+  {
+    "acCode": "20920026",
+    "formulaType": "far_future",
+    "formulaParams": null,
+    "reason": ""
+  },
+  {
+    "acCode": "20920027",
+    "formulaType": "far_future",
+    "formulaParams": null,
+    "reason": ""
+  },
+  {
+    "acCode": "20970003",
+    "formulaType": "eomonth_plus_N",
+    "formulaParams": {
+      "days": 10
+    },
+    "reason": "EOMONTH(BS_RE33!$N$4,0)+10"
+  },
+  {
+    "acCode": "20970004",
+    "formulaType": "far_future",
+    "formulaParams": null,
+    "reason": ""
+  },
+  {
+    "acCode": "20970005",
+    "formulaType": "eomonth_plus_N",
+    "formulaParams": {
+      "days": 21
+    },
+    "reason": "EOMONTH(BS_RE33!$N$4,0)+21"
+  },
+  {
+    "acCode": "20990013",
+    "formulaType": "eomonth_plus_N",
+    "formulaParams": {
+      "days": 21
+    },
+    "reason": "EOMONTH(BS_RE33!$N$4,0)+21"
+  },
+  {
+    "acCode": "20990014",
+    "formulaType": "eomonth_plus_N",
+    "formulaParams": {
+      "days": 21
+    },
+    "reason": "EOMONTH(BS_RE33!$N$4,0)+21"
+  },
+  {
+    "acCode": "20990015",
+    "formulaType": "eomonth_plus_N",
+    "formulaParams": {
+      "days": 21
+    },
+    "reason": "EOMONTH(BS_RE33!$N$4,0)+21"
+  },
+  {
+    "acCode": "20990016",
+    "formulaType": "eomonth_plus_N",
+    "formulaParams": {
+      "days": 21
+    },
+    "reason": "EOMONTH(BS_RE33!$N$4,0)+21"
+  },
+  {
+    "acCode": "20990017",
+    "formulaType": "eomonth_plus_N",
+    "formulaParams": {
+      "days": 5
+    },
+    "reason": "EOMONTH(BS_RE33!$N$4,0)+5"
+  },
+  {
+    "acCode": "20990018",
+    "formulaType": "far_future",
+    "formulaParams": null,
+    "reason": ""
+  },
+  {
+    "acCode": "23100101",
+    "formulaType": "far_future",
+    "formulaParams": null,
+    "reason": ""
+  },
+  {
+    "acCode": "23200001",
+    "formulaType": "far_future",
+    "formulaParams": null,
+    "reason": ""
+  },
+  {
+    "acCode": "25100001",
+    "formulaType": "edate_year_end_60M",
+    "formulaParams": null,
+    "reason": "DATE(YEAR(EDATE(BS_RE33!$N$4,60)),12,31)"
+  },
+  {
+    "acCode": "28810001",
+    "formulaType": "year_end",
+    "formulaParams": null,
+    "reason": "DATE(YEAR(BS_RE33!$N$4),12,31)"
+  },
+  {
+    "acCode": "28810002",
+    "formulaType": "year_end",
+    "formulaParams": null,
+    "reason": "DATE(YEAR(BS_RE33!$N$4),12,31)"
+  },
+  {
+    "acCode": "28810019",
+    "formulaType": "year_end",
+    "formulaParams": null,
+    "reason": "DATE(YEAR(BS_RE33!$N$4),12,31)"
+  },
+  {
+    "acCode": "30000001",
+    "formulaType": "edate_year_end_60M",
+    "formulaParams": null,
+    "reason": "DATE(YEAR(EDATE(BS_RE33!$N$4,60)),12,31)"
+  },
+  {
+    "acCode": "62010001",
+    "formulaType": "tomorrow",
+    "formulaParams": null,
+    "reason": ""
+  },
+  {
+    "acCode": "62010002",
+    "formulaType": "tomorrow",
+    "formulaParams": null,
+    "reason": ""
+  },
+  {
+    "acCode": "62020001",
+    "formulaType": "tomorrow",
+    "formulaParams": null,
+    "reason": ""
+  },
+  {
+    "acCode": "62020002",
+    "formulaType": "tomorrow",
+    "formulaParams": null,
+    "reason": ""
+  },
+  {
+    "acCode": "62030002",
+    "formulaType": "tomorrow",
+    "formulaParams": null,
+    "reason": ""
+  },
+  {
+    "acCode": "10255002",
+    "formulaType": "tomorrow",
+    "formulaParams": null,
+    "reason": ""
+  }
+]
