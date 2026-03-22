@@ -490,7 +490,7 @@ export function handleVerifyColumnL(req: Request, res: Response): void {
     const moRows = db.prepare(
       'SELECT ac_code, formula_type, formula_params FROM maturity_overrides'
     ).all() as Array<{ ac_code: string; formula_type: string; formula_params: string | null }>;
-    const moMap = new Map(moRows.map((r) => [r.ac_code.trim(), r]));
+    const moMap = new Map(moRows.map((r) => [(r.ac_code ?? '').trim(), r]));
 
     /** Resolve a maturity override formula to a concrete value given reportDate */
     function resolveMaturityOverride(
@@ -830,7 +830,7 @@ export function handleVerify7DayForecast(req: Request, res: Response): void {
 
     const moRows = db.prepare('SELECT ac_code, formula_type, formula_params FROM maturity_overrides')
       .all() as Array<{ ac_code: string; formula_type: string; formula_params: string | null }>;
-    const moMap = new Map(moRows.map((r) => [r.ac_code.trim(), r]));
+    const moMap = new Map(moRows.map((r) => [(r.ac_code ?? '').trim(), r]));
 
     const V_OVERRIDE: Record<string, string> = { '10255002': 'Tomorrow' };
 
@@ -1028,7 +1028,7 @@ export function handleVerifyLmgSummary(req: Request, res: Response): void {
     // Maturity overrides
     const moRows2 = db.prepare('SELECT ac_code, formula_type, formula_params FROM maturity_overrides')
       .all() as Array<{ ac_code: string; formula_type: string; formula_params: string | null }>;
-    const moMap2 = new Map(moRows2.map((r) => [r.ac_code.trim(), r]));
+    const moMap2 = new Map(moRows2.map((r) => [(r.ac_code ?? '').trim(), r]));
 
     // Bucket boundaries (same as column-l endpoint)
     function edate2(base: Date, months: number): Date {
@@ -1457,7 +1457,7 @@ export function handleDebugBsRe33(req: Request, res: Response): void {
 
     const moRows2 = db.prepare('SELECT ac_code, formula_type, formula_params FROM maturity_overrides')
       .all() as Array<{ ac_code: string; formula_type: string; formula_params: string | null }>;
-    const moMap = new Map(moRows2.map((r) => [r.ac_code.trim(), r]));
+    const moMap = new Map(moRows2.map((r) => [(r.ac_code ?? '').trim(), r]));
 
     // --- S-column helpers ---
     function eomonthL(dateStr: string, months: number): string {
@@ -1669,7 +1669,7 @@ export function handleVerifyCfTable(req: Request, res: Response): void {
 
     const moRows = db.prepare('SELECT ac_code, formula_type, formula_params FROM maturity_overrides')
       .all() as Array<{ ac_code: string; formula_type: string; formula_params: string | null }>;
-    const moMap = new Map(moRows.map((r) => [r.ac_code.trim(), r]));
+    const moMap = new Map(moRows.map((r) => [(r.ac_code ?? '').trim(), r]));
 
     // S-column helpers (LCR maturity — same as column-l endpoint)
     function eomonthLocal(dateStr: string, months: number): string {
@@ -2209,7 +2209,7 @@ export function handleLcrForecast(req: Request, res: Response): void {
 
     const moRows = db.prepare('SELECT ac_code, formula_type, formula_params FROM maturity_overrides')
       .all() as Array<{ ac_code: string; formula_type: string; formula_params: string | null }>;
-    const moMap = new Map(moRows.map((r) => [r.ac_code.trim(), r]));
+    const moMap = new Map(moRows.map((r) => [(r.ac_code ?? '').trim(), r]));
 
     // Date helpers
     function eomonthLC(dateStr: string, months: number): string {
