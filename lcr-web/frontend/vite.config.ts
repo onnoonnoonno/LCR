@@ -12,7 +12,7 @@ export default defineConfig(({ mode }) => {
       proxy: {
         // In development, proxy /api calls to the backend so CORS is not needed
         '/api': {
-          target: env.VITE_API_BASE_URL ?? 'http://localhost:3001',
+          target: env.VITE_API_URL ?? 'http://localhost:3001',
           changeOrigin: true,
         },
       },

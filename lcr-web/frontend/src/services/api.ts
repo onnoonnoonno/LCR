@@ -3,7 +3,7 @@
  */
 
 function base(): string {
-  return import.meta.env.VITE_API_BASE_URL ?? '';
+  return import.meta.env.VITE_API_URL ?? '';
 }
 
 async function handleResponse<T>(res: Response): Promise<T> {
