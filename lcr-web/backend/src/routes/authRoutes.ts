@@ -113,7 +113,16 @@ authRouter.post('/change-password', requireAuth, (req: Request, res: Response): 
     'UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?'
   ).run(newHash, user.id);
 
-  res.json({ success: true });
+  // Issue a fresh token so the caller's JWT no longer carries mustChangePassword=true.
+  // Without this, every subsequent API call would be blocked by requirePasswordChanged.
+  const newToken = signToken({
+    userId:             req.user!.userId,
+    employeeId:         req.user!.employeeId,
+    role:               req.user!.role,
+    mustChangePassword: false,
+  });
+
+  res.json({ success: true, token: newToken });
 });
 
 // ---------------------------------------------------------------------------

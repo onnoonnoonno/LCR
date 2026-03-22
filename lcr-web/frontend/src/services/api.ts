@@ -67,7 +67,11 @@ export async function changePassword(currentPassword: string, newPassword: strin
     headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: JSON.stringify({ currentPassword, newPassword }),
   });
-  return handleResponse<{ success: boolean }>(res);
+  const data = await handleResponse<{ success: boolean; token?: string }>(res);
+  // Replace the stored token so mustChangePassword=false is reflected immediately.
+  // Without this, all subsequent API calls carry the old JWT and are blocked.
+  if (data.token) setToken(data.token);
+  return { success: data.success };
 }
 
 // ---------------------------------------------------------------------------

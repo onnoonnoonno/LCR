@@ -171,15 +171,15 @@ export function handleGetLatestRun(_req: Request, res: Response): void {
     // (consistent with the deduplication rule applied in handleListHistory).
     type LatestRunRow = { run_id: string; report_date: string; source_filename: string; uploaded_at: string; row_count: number };
     const row = db.prepare(`
-      SELECT id AS run_id, report_date, source_filename, uploaded_at,
-             (SELECT COUNT(*) FROM raw_rows WHERE report_run_id = report_runs.id) AS row_count
+      SELECT rr.id AS run_id, rr.report_date, rr.source_filename, rr.uploaded_at,
+             (SELECT COUNT(*) FROM raw_rows WHERE report_run_id = rr.id) AS row_count
       FROM report_runs rr
       WHERE rr.id = (
-        SELECT id FROM report_runs
-        WHERE report_date = rr.report_date
-        ORDER BY uploaded_at DESC LIMIT 1
+        SELECT sub.id FROM report_runs sub
+        WHERE sub.report_date = rr.report_date
+        ORDER BY sub.uploaded_at DESC LIMIT 1
       )
-      ORDER BY uploaded_at DESC LIMIT 1
+      ORDER BY rr.uploaded_at DESC LIMIT 1
     `).get() as LatestRunRow | undefined;
 
     if (!row) {
