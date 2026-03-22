@@ -1,98 +1,243 @@
 /**
- * AccountMappingView — Displays the Account Mapping reference table from the DB.
+ * AccountMappingView — Full CRUD for Account Mapping reference data.
  *
- * Columns shown match the Excel Account Mapping sheet:
- *   A: Account Code
- *   B: Account Name
- *   C: Category
- *   D: Middle Category
- *   E: LCR Classification (hqlaOrCashflowType)
- *   F: Asset/Liability
+ * Features:
+ *   - Paginated table listing with server-side search
+ *   - Dropdown fields populated from existing distinct values
+ *   - Add / Edit via modal, Delete with confirmation
  */
 
-import { useState, useEffect } from 'react';
-import { fetchAccountMappings, AccountMappingRow } from '../services/api';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import {
+  fetchAccountMappings,
+  fetchAccountMappingDistinct,
+  createAccountMapping,
+  updateAccountMapping,
+  deleteAccountMapping,
+  AccountMappingRow,
+  AccountMappingInput,
+  AccountMappingDistinct,
+} from '../services/api';
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const PAGE_SIZE = 50;
+
+const EMPTY_FORM: AccountMappingInput = {
+  acCode: '',
+  acName: '',
+  category: '',
+  middleCategory: '',
+  hqlaOrCashflowType: '',
+  assetLiabilityType: '',
+};
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
 
 export function AccountMappingView() {
-  const [rows, setRows]           = useState<AccountMappingRow[]>([]);
-  const [page, setPage]           = useState(1);
+  const [rows, setRows]             = useState<AccountMappingRow[]>([]);
+  const [page, setPage]             = useState(1);
   const [totalPages, setTotalPages] = useState(1);
-  const [total, setTotal]         = useState(0);
-  const [loading, setLoading]     = useState(true);
-  const PAGE_SIZE = 50;
+  const [total, setTotal]           = useState(0);
+  const [loading, setLoading]       = useState(true);
+  const [error, setError]           = useState<string | null>(null);
 
-  async function loadPage(p: number) {
+  // Search
+  const [search, setSearch]         = useState('');
+  const searchTimer                 = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Dropdown distinct values
+  const [distinct, setDistinct]     = useState<AccountMappingDistinct | null>(null);
+
+  // Modal state
+  const [modalOpen, setModalOpen]   = useState(false);
+  const [editingRow, setEditingRow] = useState<AccountMappingRow | null>(null);
+  const [form, setForm]             = useState<AccountMappingInput>(EMPTY_FORM);
+  const [saving, setSaving]         = useState(false);
+  const [formError, setFormError]   = useState<string | null>(null);
+
+  // Delete confirmation
+  const [deleteTarget, setDeleteTarget] = useState<AccountMappingRow | null>(null);
+  const [deleting, setDeleting]         = useState(false);
+
+  // -------------------------------------------------------------------------
+  // Data loading
+  // -------------------------------------------------------------------------
+
+  const loadPage = useCallback(async (p: number, q = search) => {
     setLoading(true);
+    setError(null);
     try {
-      const res = await fetchAccountMappings(p, PAGE_SIZE);
+      const res = await fetchAccountMappings(p, PAGE_SIZE, q);
       setRows(res.rows);
       setPage(res.page);
       setTotalPages(res.totalPages);
       setTotal(res.total);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
     }
+  }, [search]);
+
+  const loadDistinct = useCallback(async () => {
+    try {
+      const res = await fetchAccountMappingDistinct();
+      setDistinct(res);
+    } catch {
+      // non-critical — dropdowns will just be empty
+    }
+  }, []);
+
+  useEffect(() => { loadPage(1); }, [loadPage]);
+  useEffect(() => { loadDistinct(); }, [loadDistinct]);
+
+  // Debounced search — triggers loadPage after 350ms of inactivity
+  function handleSearchChange(value: string) {
+    setSearch(value);
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => {
+      loadPage(1, value);
+    }, 350);
   }
 
-  useEffect(() => { loadPage(1); }, []);
+  // -------------------------------------------------------------------------
+  // Modal helpers
+  // -------------------------------------------------------------------------
+
+  function openAddModal() {
+    setEditingRow(null);
+    setForm(EMPTY_FORM);
+    setFormError(null);
+    setModalOpen(true);
+  }
+
+  function openEditModal(row: AccountMappingRow) {
+    setEditingRow(row);
+    setForm({
+      acCode: row.acCode,
+      acName: row.acName,
+      category: row.category,
+      middleCategory: row.middleCategory,
+      hqlaOrCashflowType: row.hqlaOrCashflowType,
+      assetLiabilityType: row.assetLiabilityType,
+    });
+    setFormError(null);
+    setModalOpen(true);
+  }
+
+  function closeModal() {
+    setModalOpen(false);
+    setEditingRow(null);
+    setFormError(null);
+  }
+
+  function handleFormChange(field: keyof AccountMappingInput, value: string) {
+    setForm((prev) => ({ ...prev, [field]: value }));
+  }
+
+  async function handleSave() {
+    if (!form.acCode.trim()) {
+      setFormError('Account Code is required.');
+      return;
+    }
+
+    setSaving(true);
+    setFormError(null);
+    try {
+      if (editingRow) {
+        await updateAccountMapping(editingRow.id, form);
+      } else {
+        await createAccountMapping(form);
+      }
+      closeModal();
+      await loadDistinct();
+      await loadPage(editingRow ? page : 1);
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Delete helpers
+  // -------------------------------------------------------------------------
+
+  async function handleDelete() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      await deleteAccountMapping(deleteTarget.id);
+      setDeleteTarget(null);
+      await loadDistinct();
+      await loadPage(page);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setDeleteTarget(null);
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Render
+  // -------------------------------------------------------------------------
 
   return (
     <div className="verify-view">
-      {/* N Column Override Reference (BS_RE33 H4:H6, I4) */}
       <div className="card">
-        <div className="verify-step-header">
-          <h2 className="verify-step-title">N Column Override Reference</h2>
-        </div>
-        <p className="verify-hint" style={{ marginBottom: '0.75rem' }}>
-          These are the override values used by BS_RE33 column N.
-          If a row's ref_no (column C) matches any value in the list below,
-          N is forced to the override value instead of the Account Mapping lookup.
-        </p>
-        <div className="table-wrapper">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Cell</th>
-                <th>Override Ref No (H column)</th>
-                <th>Override N Value (I column)</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr><td className="mono">H4</td><td className="mono">RCH3001AUD</td><td style={{ fontWeight: 600 }}>Non Cash Flow</td></tr>
-              <tr><td className="mono">H5</td><td className="mono">RCH3002AUD</td><td style={{ fontWeight: 600 }}>Non Cash Flow</td></tr>
-              <tr><td className="mono">H6</td><td className="mono">RCH4001USD</td><td style={{ fontWeight: 600 }}>Non Cash Flow</td></tr>
-            </tbody>
-          </table>
-        </div>
-        <p className="verify-hint" style={{ marginTop: '0.5rem' }}>
-          Source: BS_RE33 cells H4:H6 and I4. Formula: =IF(COUNTIF($H$4:$H$6, C7) &gt; 0, $I$4, VLOOKUP(...))
-        </p>
-      </div>
-
-      {/* Account Mapping Table */}
-      <div className="card">
-        <div className="verify-step-header">
-          <h2 className="verify-step-title">Account Mapping Table (DB)</h2>
-        </div>
-
-        <div className="verify-meta-grid" style={{ marginBottom: '0.75rem' }}>
-          <div className="verify-meta-item">
-            <span className="verify-meta-label">Total Mappings</span>
-            <span className="verify-meta-value">{total.toLocaleString()}</span>
+        {/* Title row */}
+        <div className="verify-step-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.75rem' }}>
+            <h2 className="verify-step-title" style={{ margin: 0 }}>Account Mapping</h2>
+            <span style={{ fontSize: '0.82rem', color: 'var(--color-text-muted, #6b7280)' }}>
+              Total Mappings: {total.toLocaleString()}
+            </span>
           </div>
+          <button className="btn btn--primary" onClick={openAddModal}>
+            + Add Account
+          </button>
         </div>
 
-        <p className="verify-hint" style={{ marginBottom: '0.75rem' }}>
-          This is the Account Mapping data stored in the database.
-          Compare each row against the original Excel Account Mapping sheet (columns A–F).
-        </p>
+        {/* Search bar */}
+        <div style={{ margin: '0.75rem 0' }}>
+          <input
+            className="form-input"
+            type="text"
+            value={search}
+            onChange={(e) => handleSearchChange(e.target.value)}
+            placeholder="Search by Account Code or Account Name"
+            style={{ width: '100%', maxWidth: '420px' }}
+          />
+        </div>
 
+        {/* Error banner */}
+        {error && (
+          <div style={{
+            padding: '0.75rem 1rem',
+            marginBottom: '0.75rem',
+            background: 'var(--color-error-bg, #fef2f2)',
+            color: 'var(--color-error, #b91c1c)',
+            borderRadius: 'var(--radius, 6px)',
+            fontSize: '0.85rem',
+          }}>
+            {error}
+          </div>
+        )}
+
+        {/* Loading */}
         {loading && (
           <div style={{ textAlign: 'center', padding: '2rem 0' }}>
             <div className="spinner" />
           </div>
         )}
 
+        {/* Table */}
         {!loading && (
           <>
             <div className="table-wrapper" style={{ maxHeight: '600px', overflowY: 'auto' }}>
@@ -100,17 +245,25 @@ export function AccountMappingView() {
                 <thead>
                   <tr>
                     <th>#</th>
-                    <th>A: Account Code</th>
-                    <th>B: Account Name</th>
-                    <th>C: Category</th>
-                    <th>D: Middle Category</th>
-                    <th>E: LCR Classification</th>
-                    <th>F: Asset/Liability</th>
+                    <th>Account Code</th>
+                    <th>Account Name</th>
+                    <th>Category</th>
+                    <th>Middle Category</th>
+                    <th>LCR Classification</th>
+                    <th>Asset/Liability</th>
+                    <th style={{ width: '120px', textAlign: 'center' }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
+                  {rows.length === 0 && (
+                    <tr>
+                      <td colSpan={8} style={{ textAlign: 'center', padding: '2rem', color: '#888' }}>
+                        No mappings found.
+                      </td>
+                    </tr>
+                  )}
                   {rows.map((r, i) => (
-                    <tr key={r.acCode}>
+                    <tr key={r.id}>
                       <td className="mono">{(page - 1) * PAGE_SIZE + i + 1}</td>
                       <td className="mono">{r.acCode}</td>
                       <td>{r.acName}</td>
@@ -118,12 +271,29 @@ export function AccountMappingView() {
                       <td style={{ fontWeight: 600 }}>{r.middleCategory}</td>
                       <td className="mono" style={{ fontSize: '0.75rem' }}>{r.hqlaOrCashflowType}</td>
                       <td>{r.assetLiabilityType}</td>
+                      <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
+                        <button
+                          className="btn btn--sm btn--ghost"
+                          onClick={() => openEditModal(r)}
+                          style={{ marginRight: '0.25rem' }}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          className="btn btn--sm btn--ghost"
+                          style={{ color: 'var(--color-error, #b91c1c)' }}
+                          onClick={() => setDeleteTarget(r)}
+                        >
+                          Delete
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
 
+            {/* Pagination */}
             {totalPages > 1 && (
               <div className="pagination" style={{ marginTop: '0.75rem' }}>
                 <button
@@ -148,6 +318,150 @@ export function AccountMappingView() {
           </>
         )}
       </div>
+
+      {/* ----------------------------------------------------------------- */}
+      {/* Add / Edit Modal                                                   */}
+      {/* ----------------------------------------------------------------- */}
+      {modalOpen && (
+        <div className="modal-overlay" onClick={closeModal}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ marginTop: 0, marginBottom: '1rem' }}>
+              {editingRow ? 'Edit Account Mapping' : 'Add Account Mapping'}
+            </h3>
+
+            {formError && (
+              <div style={{
+                padding: '0.5rem 0.75rem',
+                marginBottom: '0.75rem',
+                background: 'var(--color-error-bg, #fef2f2)',
+                color: 'var(--color-error, #b91c1c)',
+                borderRadius: 'var(--radius, 6px)',
+                fontSize: '0.85rem',
+              }}>
+                {formError}
+              </div>
+            )}
+
+            <div className="form-grid">
+              {/* Text inputs */}
+              <label className="form-label">
+                Account Code
+                <input
+                  className="form-input"
+                  type="text"
+                  value={form.acCode}
+                  onChange={(e) => handleFormChange('acCode', e.target.value)}
+                  placeholder="e.g. 10101001"
+                />
+              </label>
+
+              <label className="form-label">
+                Account Name
+                <input
+                  className="form-input"
+                  type="text"
+                  value={form.acName}
+                  onChange={(e) => handleFormChange('acName', e.target.value)}
+                  placeholder="e.g. CASH ON HAND"
+                />
+              </label>
+
+              {/* Dropdown selects */}
+              <label className="form-label">
+                Category
+                <select
+                  className="form-input"
+                  value={form.category}
+                  onChange={(e) => handleFormChange('category', e.target.value)}
+                >
+                  <option value="">Select Category</option>
+                  {distinct?.category.map((v) => (
+                    <option key={v} value={v}>{v}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="form-label">
+                Middle Category
+                <select
+                  className="form-input"
+                  value={form.middleCategory}
+                  onChange={(e) => handleFormChange('middleCategory', e.target.value)}
+                >
+                  <option value="">Select Middle Category</option>
+                  {distinct?.middleCategory.map((v) => (
+                    <option key={v} value={v}>{v}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="form-label">
+                LCR Classification
+                <select
+                  className="form-input"
+                  value={form.hqlaOrCashflowType}
+                  onChange={(e) => handleFormChange('hqlaOrCashflowType', e.target.value)}
+                >
+                  <option value="">Select LCR Classification</option>
+                  {distinct?.hqlaOrCashflowType.map((v) => (
+                    <option key={v} value={v}>{v}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="form-label">
+                Asset/Liability
+                <select
+                  className="form-input"
+                  value={form.assetLiabilityType}
+                  onChange={(e) => handleFormChange('assetLiabilityType', e.target.value)}
+                >
+                  <option value="">Select Asset/Liability</option>
+                  {distinct?.assetLiabilityType.map((v) => (
+                    <option key={v} value={v}>{v}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '1.25rem' }}>
+              <button className="btn btn--ghost" onClick={closeModal} disabled={saving}>
+                Cancel
+              </button>
+              <button className="btn btn--primary" onClick={handleSave} disabled={saving}>
+                {saving ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ----------------------------------------------------------------- */}
+      {/* Delete Confirmation Modal                                          */}
+      {/* ----------------------------------------------------------------- */}
+      {deleteTarget && (
+        <div className="modal-overlay" onClick={() => setDeleteTarget(null)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ marginTop: 0, marginBottom: '0.75rem' }}>Delete Account Mapping</h3>
+            <p style={{ margin: '0 0 1rem' }}>
+              Are you sure you want to delete <strong>{deleteTarget.acCode}</strong> ({deleteTarget.acName})?
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+              <button className="btn btn--ghost" onClick={() => setDeleteTarget(null)} disabled={deleting}>
+                Cancel
+              </button>
+              <button
+                className="btn btn--primary"
+                style={{ background: 'var(--color-error, #b91c1c)' }}
+                onClick={handleDelete}
+                disabled={deleting}
+              >
+                {deleting ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

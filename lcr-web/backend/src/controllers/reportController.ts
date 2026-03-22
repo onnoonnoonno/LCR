@@ -193,6 +193,58 @@ export function handleListHistory(req: Request, res: Response): void {
 }
 
 // ---------------------------------------------------------------------------
+// DELETE /api/history/reset
+// Deletes ALL run history data (report_summaries, processed_rows, raw_rows,
+// report_runs). Does NOT touch reference tables (account_mappings, etc.).
+// ---------------------------------------------------------------------------
+
+export function handleDeleteRun(req: Request, res: Response): void {
+  try {
+    const { runId } = req.params;
+    if (!runId) {
+      res.status(400).json({ success: false, error: 'runId is required' });
+      return;
+    }
+
+    const db = getDb();
+
+    // Check if run exists
+    const run = db.prepare('SELECT id FROM report_runs WHERE id = ?').get(runId);
+    if (!run) {
+      res.status(404).json({ success: false, error: 'Run not found' });
+      return;
+    }
+
+    // Delete children first, then parent
+    db.prepare('DELETE FROM report_summaries WHERE report_run_id = ?').run(runId);
+    db.prepare('DELETE FROM processed_rows WHERE report_run_id = ?').run(runId);
+    db.prepare('DELETE FROM raw_rows WHERE report_run_id = ?').run(runId);
+    db.prepare('DELETE FROM report_runs WHERE id = ?').run(runId);
+
+    res.json({ success: true });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: msg });
+  }
+}
+
+export function handleResetHistory(_req: Request, res: Response): void {
+  try {
+    const db = getDb();
+    db.exec(`
+      DELETE FROM report_summaries;
+      DELETE FROM processed_rows;
+      DELETE FROM raw_rows;
+      DELETE FROM report_runs;
+    `);
+    res.json({ success: true, message: 'All history data has been deleted.' });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: msg });
+  }
+}
+
+// ---------------------------------------------------------------------------
 // GET /api/summary?date=YYYY-MM-DD
 // Returns the summary for a specific report date (latest run for that date).
 // Also accepts ?runId=<uuid> to load a specific run.
@@ -1822,27 +1874,36 @@ export function handleDebugRawCells(req: Request, res: Response): void {
 }
 
 export function handleGetAccountMappings(req: Request, res: Response): void {
-  const { page, pageSize } = req.query as { page?: string; pageSize?: string };
+  const { page, pageSize, search } = req.query as { page?: string; pageSize?: string; search?: string };
 
   try {
     const db = getDb();
     const p  = parseInt(page     ?? '1',  10);
     const ps = parseInt(pageSize ?? '50', 10);
 
+    const hasSearch = search && search.trim().length > 0;
+    const searchPattern = hasSearch ? `%${search.trim()}%` : null;
+
+    const whereClause = hasSearch
+      ? 'WHERE ac_code LIKE ? OR ac_name LIKE ?'
+      : '';
+    const whereParams = hasSearch ? [searchPattern, searchPattern] : [];
+
     const total = (db.prepare(
-      'SELECT COUNT(*) AS cnt FROM account_mappings'
-    ).get() as { cnt: number }).cnt;
+      `SELECT COUNT(*) AS cnt FROM account_mappings ${whereClause}`
+    ).get(...whereParams) as { cnt: number }).cnt;
 
     const offset = (p - 1) * ps;
 
     const rows = db.prepare(`
-      SELECT ac_code, ac_name, category, middle_category,
+      SELECT id, ac_code, ac_name, category, middle_category,
              hqla_or_cashflow_type, asset_liability_type
       FROM account_mappings
+      ${whereClause}
       ORDER BY ac_code
       LIMIT ? OFFSET ?
-    `).all(ps, offset) as Array<{
-      ac_code: string; ac_name: string | null; category: string | null;
+    `).all(...whereParams, ps, offset) as Array<{
+      id: number; ac_code: string; ac_name: string | null; category: string | null;
       middle_category: string | null; hqla_or_cashflow_type: string | null;
       asset_liability_type: string | null;
     }>;
@@ -1854,6 +1915,7 @@ export function handleGetAccountMappings(req: Request, res: Response): void {
       total,
       totalPages: Math.ceil(total / ps),
       rows: rows.map((r) => ({
+        id:                 r.id,
         acCode:             r.ac_code,
         acName:             r.ac_name             ?? '',
         category:           r.category            ?? '',
@@ -1861,6 +1923,385 @@ export function handleGetAccountMappings(req: Request, res: Response): void {
         hqlaOrCashflowType: r.hqla_or_cashflow_type ?? '',
         assetLiabilityType: r.asset_liability_type ?? '',
       })),
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: msg });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Account Mapping — DISTINCT values for dropdown options
+// ---------------------------------------------------------------------------
+
+export function handleGetAccountMappingDistinct(_req: Request, res: Response): void {
+  try {
+    const db = getDb();
+
+    const queryDistinct = (col: string): string[] =>
+      (db.prepare(`SELECT DISTINCT ${col} AS v FROM account_mappings WHERE ${col} IS NOT NULL AND ${col} != '' ORDER BY ${col}`).all() as Array<{ v: string }>).map((r) => r.v);
+
+    res.json({
+      success: true,
+      category:           queryDistinct('category'),
+      middleCategory:     queryDistinct('middle_category'),
+      hqlaOrCashflowType: queryDistinct('hqla_or_cashflow_type'),
+      assetLiabilityType: queryDistinct('asset_liability_type'),
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: msg });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Account Mapping — CREATE
+// ---------------------------------------------------------------------------
+
+export function handleCreateAccountMapping(req: Request, res: Response): void {
+  try {
+    const { acCode, acName, category, middleCategory, hqlaOrCashflowType, assetLiabilityType } = req.body as {
+      acCode: string; acName?: string; category?: string;
+      middleCategory?: string; hqlaOrCashflowType?: string; assetLiabilityType?: string;
+    };
+
+    if (!acCode || !acCode.trim()) {
+      res.status(400).json({ success: false, error: 'acCode is required' });
+      return;
+    }
+
+    const db = getDb();
+
+    const result = db.prepare(`
+      INSERT INTO account_mappings (ac_code, ac_name, category, middle_category, hqla_or_cashflow_type, asset_liability_type)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(
+      acCode.trim(),
+      acName ?? null,
+      category ?? null,
+      middleCategory ?? null,
+      hqlaOrCashflowType ?? null,
+      assetLiabilityType ?? null,
+    );
+
+    res.json({
+      success: true,
+      id: result.lastInsertRowid,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const status = msg.includes('UNIQUE constraint') ? 409 : 500;
+    res.status(status).json({ success: false, error: msg });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Account Mapping — UPDATE
+// ---------------------------------------------------------------------------
+
+export function handleUpdateAccountMapping(req: Request, res: Response): void {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) {
+      res.status(400).json({ success: false, error: 'Invalid id' });
+      return;
+    }
+
+    const { acCode, acName, category, middleCategory, hqlaOrCashflowType, assetLiabilityType } = req.body as {
+      acCode: string; acName?: string; category?: string;
+      middleCategory?: string; hqlaOrCashflowType?: string; assetLiabilityType?: string;
+    };
+
+    if (!acCode || !acCode.trim()) {
+      res.status(400).json({ success: false, error: 'acCode is required' });
+      return;
+    }
+
+    const db = getDb();
+
+    const result = db.prepare(`
+      UPDATE account_mappings
+      SET ac_code = ?, ac_name = ?, category = ?, middle_category = ?,
+          hqla_or_cashflow_type = ?, asset_liability_type = ?
+      WHERE id = ?
+    `).run(
+      acCode.trim(),
+      acName ?? null,
+      category ?? null,
+      middleCategory ?? null,
+      hqlaOrCashflowType ?? null,
+      assetLiabilityType ?? null,
+      id,
+    );
+
+    if (result.changes === 0) {
+      res.status(404).json({ success: false, error: 'Mapping not found' });
+      return;
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const status = msg.includes('UNIQUE constraint') ? 409 : 500;
+    res.status(status).json({ success: false, error: msg });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Account Mapping — DELETE
+// ---------------------------------------------------------------------------
+
+export function handleDeleteAccountMapping(req: Request, res: Response): void {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) {
+      res.status(400).json({ success: false, error: 'Invalid id' });
+      return;
+    }
+
+    const db = getDb();
+    const result = db.prepare('DELETE FROM account_mappings WHERE id = ?').run(id);
+
+    if (result.changes === 0) {
+      res.status(404).json({ success: false, error: 'Mapping not found' });
+      return;
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: msg });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/verify/lcr-forecast?runId=<id>
+// Computes monthly LCR projections for 8 months from report date.
+// Replicates the CF Table D119 logic but shifts the 30-day window forward
+// each month: for month M, window = [M_start, M_start + 30 days].
+// ---------------------------------------------------------------------------
+
+export function handleLcrForecast(req: Request, res: Response): void {
+  const { runId } = req.query as { runId?: string };
+  if (!runId) {
+    res.status(400).json({ success: false, error: 'Provide ?runId=<id>' });
+    return;
+  }
+
+  try {
+    loadReferenceDataFromDb();
+    const db = getDb();
+
+    const runMeta = db.prepare('SELECT report_date FROM report_runs WHERE id = ?').get(runId) as
+      { report_date: string } | undefined;
+    if (!runMeta) {
+      res.status(404).json({ success: false, error: 'Run not found' });
+      return;
+    }
+    const reportDate = runMeta.report_date;
+
+    // Reference data (same as CF Table)
+    const N_OVERRIDE_REFNOS = new Set(['RCH3001AUD', 'RCH3002AUD', 'RCH4001USD']);
+    const O_ELIGIBLE_CATEGORIES = new Set([
+      'Loan', 'Deposit_Liability', 'OFF_Unused Loan Commitment', 'HQLA',
+    ]);
+    const Q_SIGN_FLIP_CODES = new Set([
+      '10690001','10690002','10690003','10690004','10690005','10690006','10690007','10690008',
+      '16100001','16100002','18800002',
+      '20920001','20920002','20920003','20920004','20920005','20920006','20920007','20920008',
+      '20920009','20920011','20920012','20920013','20920014','20920015','20920016','20920017',
+      '20920018','20920019','20920021','20920022','20920023','20920024','20920025',
+    ]);
+    const BUYBACK_RATES_LC: Record<string, number> = {
+      'Deposit (Certificate of Deposit)': 0.10,
+      'Deposit (Term Certificate of Deposit)': 0.05,
+      'Bond issued': 0.05,
+    };
+
+    const ctRows = db.prepare('SELECT counterparty_no, customer_type FROM customer_types')
+      .all() as Array<{ counterparty_no: string; customer_type: string }>;
+    const ctMap = new Map(ctRows.map((r) => [r.counterparty_no.trim(), r.customer_type]));
+
+    const arRows = db.prepare('SELECT p_key, assumption_rate FROM assumption_rules')
+      .all() as Array<{ p_key: string; assumption_rate: number }>;
+    const arMap = new Map(arRows.map((r) => [r.p_key.trim(), r.assumption_rate]));
+
+    const moRows = db.prepare('SELECT ac_code, formula_type, formula_params FROM maturity_overrides')
+      .all() as Array<{ ac_code: string; formula_type: string; formula_params: string | null }>;
+    const moMap = new Map(moRows.map((r) => [r.ac_code.trim(), r]));
+
+    // Date helpers
+    function eomonthLC(dateStr: string, months: number): string {
+      const d = new Date(dateStr + 'T12:00:00Z');
+      return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + months + 1, 0))
+        .toISOString().substring(0, 10);
+    }
+    function addDaysLC(dateStr: string, n: number): string {
+      const d = new Date(dateStr + 'T12:00:00Z');
+      d.setUTCDate(d.getUTCDate() + n);
+      return d.toISOString().substring(0, 10);
+    }
+    function resolveMatAdjLC(ft: string, fp: string | null): string {
+      switch (ft) {
+        case 'tomorrow': return 'Tomorrow';
+        case 'far_future': return '2999-12-31';
+        case 'year_end': return reportDate.substring(0, 4) + '-12-31';
+        case 'eomonth_plus_N': {
+          const days = fp ? (JSON.parse(fp) as { days?: number }).days ?? 0 : 0;
+          return addDaysLC(eomonthLC(reportDate, 0), days);
+        }
+        case 'edate_year_end_60M':
+          return (parseInt(reportDate.substring(0, 4)) + 5) + '-12-31';
+        default: return '';
+      }
+    }
+    function computeSLC(ac: string, matDate: string | null): string {
+      const mo = moMap.get(ac);
+      if (mo) return resolveMatAdjLC(mo.formula_type, mo.formula_params);
+      if (!matDate || matDate < reportDate) return 'Tomorrow';
+      return matDate;
+    }
+
+    // Fetch all raw rows and pre-compute per-row classification
+    const rawDbRows = db.prepare(`
+      SELECT ac_code, ref_no, counterparty_no, base_ccy_amt, maturity_date
+      FROM raw_rows WHERE report_run_id = ?
+    `).all(runId) as Array<{
+      ac_code: string | null; ref_no: string | null;
+      counterparty_no: string | null; base_ccy_amt: number | null;
+      maturity_date: string | null;
+    }>;
+
+    const enriched = rawDbRows.map((r) => {
+      const ac = (r.ac_code ?? '').trim();
+      const mapping = lookupAccountMapping(ac);
+      if (!mapping) return null;
+
+      const refNo = r.ref_no?.trim() ?? '';
+      const cat = mapping.category;
+      const mid = mapping.middleCategory;
+      const cptyNo = r.counterparty_no?.trim() ?? '';
+      const o = O_ELIGIBLE_CATEGORIES.has(cat) ? (ctMap.get(cptyNo) ?? '') : '';
+      const pKey = mid + '_' + o;
+
+      const isNOverride = N_OVERRIDE_REFNOS.has(refNo);
+      const n = isNOverride ? 'Non Cash Flow' : (mapping.hqlaOrCashflowType ?? '');
+
+      const signFlip = Q_SIGN_FLIP_CODES.has(ac);
+      const baseCcyAmt = r.base_ccy_amt ?? 0;
+      const q = signFlip ? -baseCcyAmt : baseCcyAmt;
+
+      const rRate = arMap.get(pKey) ?? 0;
+      const s = computeSLC(ac, r.maturity_date);
+
+      let inOut = '';
+      if (n === 'Inflow') inOut = 'Inflow';
+      else if (n === 'Outflow') inOut = 'Outflow';
+      else if (n === 'HQLA') inOut = 'HQLA';
+
+      return { q, rRate, s, inOut, mid, pKey };
+    }).filter(Boolean) as Array<{
+      q: number; rRate: number; s: string;
+      inOut: string; mid: string; pKey: string;
+    }>;
+
+    // Generate 8 monthly start dates (aligned with gap forecast EOMONTH chain)
+    const monthStarts: string[] = [];
+    {
+      let prevEom = eomonthLC(reportDate, 0); // EOMONTH(reportDate, 0) — same as gap forecast
+      for (let i = 0; i < 8; i++) {
+        if (i === 0) {
+          monthStarts.push(reportDate); // Month 0 = report date (baseline)
+        } else {
+          monthStarts.push(addDaysLC(prevEom, 1)); // Day after previous EOM
+          prevEom = eomonthLC(prevEom, 1);
+        }
+      }
+    }
+
+    // For each monthly start, compute CF table logic with shifted 30-day window.
+    // CRITICAL: "Tomorrow" items (matured before reportDate) are only included
+    // in Month 0's window. For future months they have already settled.
+    const isMonth0 = (ms: string) => ms === reportDate;
+
+    const forecast = monthStarts.map((monthStart) => {
+      const day30End = addDaysLC(monthStart, 30);
+
+      function isInWindowLC(sVal: string): boolean {
+        // "Tomorrow" = items that matured before report date.
+        // They only participate in Month 0's 30-day window (same as CF Table).
+        if (sVal === 'Tomorrow') return isMonth0(monthStart);
+        return sVal >= monthStart && sVal <= day30End;
+      }
+
+      let hqlaTotal = 0;
+      let buybackOutflow = 0;
+
+      const pKeyData = new Map<string, {
+        inOut: string; assumptionRate: number; rawQSum: number; middleCategory: string;
+      }>();
+
+      for (const r of enriched) {
+        if (r.inOut === 'HQLA') {
+          hqlaTotal += r.q;
+        }
+
+        if ((r.inOut === 'Inflow' || r.inOut === 'Outflow') && isInWindowLC(r.s)) {
+          const existing = pKeyData.get(r.pKey);
+          if (existing) {
+            existing.rawQSum += r.q;
+          } else {
+            pKeyData.set(r.pKey, {
+              inOut: r.inOut, assumptionRate: r.rRate,
+              rawQSum: r.q, middleCategory: r.mid,
+            });
+          }
+        }
+
+        if (r.inOut === 'Outflow' && !isInWindowLC(r.s)) {
+          const buybackRate = BUYBACK_RATES_LC[r.mid];
+          if (buybackRate) {
+            buybackOutflow += Math.abs(r.q) * buybackRate;
+          }
+        }
+      }
+
+      let baseOutflow = 0;
+      let baseInflow = 0;
+      for (const [, d] of pKeyData) {
+        const k = d.rawQSum * d.assumptionRate;
+        if (d.inOut === 'Outflow') baseOutflow += k;
+        else if (d.inOut === 'Inflow') baseInflow += k;
+      }
+
+      const grossOutflow = baseOutflow + buybackOutflow;
+      const hoFacility = grossOutflow * 0.20;
+      const sumInflow = baseInflow + hoFacility;
+      const cappedInflow = Math.min(sumInflow, grossOutflow * 0.75);
+      const netCashOutflow = grossOutflow - cappedInflow;
+      const hqla = Math.round(hqlaTotal);
+      const lcr = netCashOutflow > 0 ? (hqla / netCashOutflow) * 100 : null;
+
+      const d = new Date(monthStart + 'T12:00:00Z');
+      const label = d.toLocaleString('en-US', { month: 'short', timeZone: 'UTC' }) +
+        ' ' + d.getUTCFullYear();
+
+      return {
+        date: monthStart,
+        label,
+        hqla,
+        totalOutflow: Math.round(grossOutflow),
+        totalInflow: Math.round(baseInflow + hoFacility),
+        netCashOutflow: Math.round(netCashOutflow),
+        lcr,
+      };
+    });
+
+    res.json({
+      success: true,
+      runId,
+      reportDate,
+      forecast,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

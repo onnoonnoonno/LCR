@@ -1,0 +1,10 @@
+# Dependencies
+node_modules/
+
+# Environment
+.env
+
+# SQLite database files
+*.db
+*.db-shm
+*.db-wal

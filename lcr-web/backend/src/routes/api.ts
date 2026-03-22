@@ -16,6 +16,8 @@ import {
   handleUploadRaw,
   handleGetRawRows,
   handleListHistory,
+  handleDeleteRun,
+  handleResetHistory,
   handleGetSummary,
   handleGetDebugRows,
   handleVerifyColumnL,
@@ -26,6 +28,11 @@ import {
   handleDebugRawCells,
   handleGetLatestRun,
   handleGetAccountMappings,
+  handleGetAccountMappingDistinct,
+  handleCreateAccountMapping,
+  handleUpdateAccountMapping,
+  handleDeleteAccountMapping,
+  handleLcrForecast,
 } from '../controllers/reportController';
 
 export const apiRouter = Router();
@@ -78,6 +85,8 @@ apiRouter.get('/raw-rows', handleGetRawRows);
 // History retrieval
 // ---------------------------------------------------------------------------
 apiRouter.get('/history', handleListHistory);
+apiRouter.delete('/history/run/:runId', handleDeleteRun);
+apiRouter.delete('/history/reset', handleResetHistory);
 apiRouter.get('/summary', handleGetSummary);
 apiRouter.get('/latest-run', handleGetLatestRun);
 
@@ -85,6 +94,10 @@ apiRouter.get('/latest-run', handleGetLatestRun);
 // Reference data inspection
 // ---------------------------------------------------------------------------
 apiRouter.get('/account-mappings', handleGetAccountMappings);
+apiRouter.get('/account-mappings/distinct', handleGetAccountMappingDistinct);
+apiRouter.post('/account-mappings', handleCreateAccountMapping);
+apiRouter.put('/account-mappings/:id', handleUpdateAccountMapping);
+apiRouter.delete('/account-mappings/:id', handleDeleteAccountMapping);
 
 // ---------------------------------------------------------------------------
 // Verification routes (step-by-step column verification)
@@ -93,6 +106,7 @@ apiRouter.get('/verify/column-l', handleVerifyColumnL);
 apiRouter.get('/verify/gap-forecast', handleVerify7DayForecast);
 apiRouter.get('/verify/lmg-summary', handleVerifyLmgSummary);
 apiRouter.get('/verify/cf-table', handleVerifyCfTable);
+apiRouter.get('/verify/lcr-forecast', handleLcrForecast);
 
 // ---------------------------------------------------------------------------
 // Debug routes (not linked from main UI)

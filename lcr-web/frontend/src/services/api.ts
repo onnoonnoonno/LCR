@@ -199,6 +199,7 @@ export interface ColumnLResponse {
 }
 
 export interface AccountMappingRow {
+  id:                 number;
   acCode:             string;
   acName:             string;
   category:           string;
@@ -346,6 +347,30 @@ export async function fetchCfTable(runId: string): Promise<CfTableResponse> {
   return handleResponse<CfTableResponse>(res);
 }
 
+// LCR Forecast (8-month projection)
+export interface LcrForecastMonth {
+  date:            string;
+  label:           string;
+  hqla:            number;
+  totalOutflow:    number;
+  totalInflow:     number;
+  netCashOutflow:  number;
+  lcr:             number | null;
+}
+
+export interface LcrForecastResponse {
+  success:    boolean;
+  runId:      string;
+  reportDate: string;
+  forecast:   LcrForecastMonth[];
+}
+
+export async function fetchLcrForecast(runId: string): Promise<LcrForecastResponse> {
+  const params = new URLSearchParams({ runId });
+  const res = await fetch(`${base()}/api/verify/lcr-forecast?${params}`);
+  return handleResponse<LcrForecastResponse>(res);
+}
+
 export interface BsRe33Row {
   row: number;
   acCode: string;
@@ -412,13 +437,59 @@ export async function fetchRawCells(file: File): Promise<RawCellsResponse> {
 export async function fetchAccountMappings(
   page = 1,
   pageSize = 50,
+  search = '',
 ): Promise<AccountMappingResponse> {
   const params = new URLSearchParams({
     page: String(page),
     pageSize: String(pageSize),
   });
+  if (search.trim()) params.set('search', search.trim());
   const res = await fetch(`${base()}/api/account-mappings?${params}`);
   return handleResponse<AccountMappingResponse>(res);
+}
+
+export interface AccountMappingDistinct {
+  success:            boolean;
+  category:           string[];
+  middleCategory:     string[];
+  hqlaOrCashflowType: string[];
+  assetLiabilityType: string[];
+}
+
+/** Fetch distinct dropdown values for account mapping fields. */
+export async function fetchAccountMappingDistinct(): Promise<AccountMappingDistinct> {
+  const res = await fetch(`${base()}/api/account-mappings/distinct`);
+  return handleResponse<AccountMappingDistinct>(res);
+}
+
+export type AccountMappingInput = Omit<AccountMappingRow, 'id'>;
+
+/** Create a new account mapping. */
+export async function createAccountMapping(data: AccountMappingInput): Promise<{ success: boolean; id: number }> {
+  const res = await fetch(`${base()}/api/account-mappings`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  return handleResponse<{ success: boolean; id: number }>(res);
+}
+
+/** Update an existing account mapping. */
+export async function updateAccountMapping(id: number, data: AccountMappingInput): Promise<{ success: boolean }> {
+  const res = await fetch(`${base()}/api/account-mappings/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  return handleResponse<{ success: boolean }>(res);
+}
+
+/** Delete an account mapping. */
+export async function deleteAccountMapping(id: number): Promise<{ success: boolean }> {
+  const res = await fetch(`${base()}/api/account-mappings/${id}`, {
+    method: 'DELETE',
+  });
+  return handleResponse<{ success: boolean }>(res);
 }
 
 /** Upload Excel file and run the full pipeline. Returns the summary immediately. */
@@ -465,4 +536,10 @@ export async function fetchLatestRun(): Promise<LatestRunResponse> {
 export async function checkHealth(): Promise<{ status: string }> {
   const res = await fetch(`${base()}/api/health`);
   return handleResponse<{ status: string }>(res);
+}
+
+/** Delete a specific report run and all its associated data. */
+export async function deleteHistoryRun(runId: string): Promise<{ success: boolean }> {
+  const res = await fetch(`${base()}/api/history/run/${runId}`, { method: 'DELETE' });
+  return handleResponse<{ success: boolean }>(res);
 }
