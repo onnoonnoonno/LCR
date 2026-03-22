@@ -9,6 +9,7 @@
 import path from 'path';
 import fs from 'fs';
 import Database from 'better-sqlite3';
+import bcrypt from 'bcrypt';
 
 const DATA_DIR = path.join(process.cwd(), 'src', 'reference', 'data');
 
@@ -167,6 +168,44 @@ function seedMaturityOverrides(db: Database.Database): void {
 }
 
 // ---------------------------------------------------------------------------
+// Demo users — runs at startup, idempotent
+// ---------------------------------------------------------------------------
+
+interface DemoUser {
+  employee_id: string;
+  password: string;
+  role: 'admin' | 'user';
+  must_change_password: 0 | 1;
+}
+
+const DEMO_USERS: DemoUser[] = [
+  { employee_id: '24614315', password: 'Welcome1', role: 'admin', must_change_password: 0 },
+  { employee_id: '12345678', password: 'Welcome1', role: 'user',  must_change_password: 1 },
+];
+
+function seedDemoUsers(db: Database.Database): void {
+  const check = db.prepare<[string], { id: number }>(
+    'SELECT id FROM users WHERE employee_id = ?'
+  );
+  const insert = db.prepare(
+    `INSERT INTO users (employee_id, password_hash, role, must_change_password)
+     VALUES (?, ?, ?, ?)`
+  );
+
+  let created = 0;
+  for (const u of DEMO_USERS) {
+    if (check.get(u.employee_id)) continue;          // already exists — skip
+    const hash = bcrypt.hashSync(u.password, 12);
+    insert.run(u.employee_id, hash, u.role, u.must_change_password);
+    console.log(`[seed] demo user created: ${u.employee_id} (${u.role})`);
+    created++;
+  }
+  if (created === 0) {
+    console.log('[seed] demo users: all accounts already present, no changes made');
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Public entry point
 // ---------------------------------------------------------------------------
 export function seedReferenceData(db: Database.Database): void {
@@ -175,5 +214,6 @@ export function seedReferenceData(db: Database.Database): void {
   seedCustomerTypes(db);
   seedAssumptionRules(db);
   seedMaturityOverrides(db);
+  seedDemoUsers(db);
   console.log('[seed] Done.');
 }
