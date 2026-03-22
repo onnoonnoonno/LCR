@@ -17,21 +17,26 @@ console.log('=== BACKEND FROM LCR_REPO / TEST 001 ===');
 // ---------------------------------------------------------------------------
 // CORS — restricted to configured origins
 // ---------------------------------------------------------------------------
-const allowedOrigins = (process.env.CORS_ORIGINS ?? 'http://localhost:5173')
-  .split(',')
-  .map((o) => o.trim())
-  .filter(Boolean);
+const allowedOrigins = [
+  'http://localhost:5173',
+  'https://lcr-frontend.onrender.com',
+  ...(process.env.CORS_ORIGINS ?? '').split(',').map((o) => o.trim()).filter(Boolean),
+];
 
-app.use(cors({
+const corsOptions: cors.CorsOptions = {
   origin: (origin, callback) => {
-    // Allow requests with no origin (e.g. server-to-server, curl)
+    // Allow requests with no origin (curl, Postman, server-to-server)
     if (!origin) return callback(null, true);
     if (allowedOrigins.includes(origin)) return callback(null, true);
-    callback(new Error(`CORS: origin "${origin}" not allowed.`));
+    // Reject silently — do NOT throw, which would cause a 500 on preflight
+    callback(null, false);
   },
   credentials: true,
-}));
-app.options('*', cors());
+};
+
+app.use(cors(corsOptions));
+// Handle OPTIONS preflight explicitly before any other middleware
+app.options('*', cors(corsOptions));
 
 // ---------------------------------------------------------------------------
 // Request logging
