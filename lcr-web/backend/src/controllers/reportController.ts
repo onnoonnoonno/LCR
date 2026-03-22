@@ -23,6 +23,21 @@ import {
 } from '../pipeline/historyService';
 
 // ---------------------------------------------------------------------------
+// Access helper
+// Policy (shared visibility model):
+//   Any authenticated user → can read any run
+//   Run does not exist     → false (caller returns 404 or 403)
+// Destructive actions (delete/mutate) are enforced at the route level
+// via requireRole('admin') and are not handled here.
+// ---------------------------------------------------------------------------
+function canAccessRun(runId: string, req: Request): boolean {
+  if (!req.user) return false; // not authenticated
+  const db = getDb();
+  const run = db.prepare('SELECT id FROM report_runs WHERE id = ?').get(runId);
+  return run != null; // run exists → any authenticated user may read it
+}
+
+// ---------------------------------------------------------------------------
 // POST /api/upload
 // Accepts an Excel file, runs the full pipeline, stores results, returns summary.
 // ---------------------------------------------------------------------------
@@ -36,7 +51,7 @@ export function handleUploadAndProcess(req: Request, res: Response): void {
 
   try {
     // Step 1: store raw data
-    const uploadResult = uploadRawData(file.buffer, file.originalname);
+    const uploadResult = uploadRawData(file.buffer, file.originalname, undefined, req.user?.userId);
 
     // Step 2: run full pipeline (classify → calculate → aggregate → persist)
     const pipelineResult = processReportRun(uploadResult.runId);
@@ -87,7 +102,7 @@ export function handleUploadRaw(req: Request, res: Response): void {
   try {
     // Manual report date from form field (takes priority over filename extraction)
     const manualDate = req.body?.reportDate as string | undefined;
-    const uploadResult = uploadRawData(file.buffer, file.originalname, manualDate);
+    const uploadResult = uploadRawData(file.buffer, file.originalname, manualDate, req.user?.userId);
 
     res.json({
       success:        true,
@@ -118,6 +133,11 @@ export function handleGetRawRows(req: Request, res: Response): void {
     return;
   }
 
+  if (!canAccessRun(runId, req)) {
+    res.status(403).json({ success: false, error: 'Access denied.' });
+    return;
+  }
+
   try {
     const p  = parseInt(page     ?? '1',   10);
     const ps = parseInt(pageSize ?? '100', 10);
@@ -143,19 +163,24 @@ export function handleGetRawRows(req: Request, res: Response): void {
 // Used by the frontend to auto-load the latest report on page open.
 // ---------------------------------------------------------------------------
 
-export function handleGetLatestRun(req: Request, res: Response): void {
+export function handleGetLatestRun(_req: Request, res: Response): void {
   try {
     const db = getDb();
+    // Shared visibility: return the most recently uploaded run across all users.
+    // Among runs for the same report_date, only the latest upload is considered
+    // (consistent with the deduplication rule applied in handleListHistory).
+    type LatestRunRow = { run_id: string; report_date: string; source_filename: string; uploaded_at: string; row_count: number };
     const row = db.prepare(`
       SELECT id AS run_id, report_date, source_filename, uploaded_at,
              (SELECT COUNT(*) FROM raw_rows WHERE report_run_id = report_runs.id) AS row_count
-      FROM report_runs
-      ORDER BY uploaded_at DESC
-      LIMIT 1
-    `).get() as {
-      run_id: string; report_date: string; source_filename: string;
-      uploaded_at: string; row_count: number;
-    } | undefined;
+      FROM report_runs rr
+      WHERE rr.id = (
+        SELECT id FROM report_runs
+        WHERE report_date = rr.report_date
+        ORDER BY uploaded_at DESC LIMIT 1
+      )
+      ORDER BY uploaded_at DESC LIMIT 1
+    `).get() as LatestRunRow | undefined;
 
     if (!row) {
       res.json({ success: true, found: false });
@@ -182,9 +207,43 @@ export function handleGetLatestRun(req: Request, res: Response): void {
 // Returns a list of all available report dates with summary snapshots.
 // ---------------------------------------------------------------------------
 
-export function handleListHistory(req: Request, res: Response): void {
+export function handleListHistory(_req: Request, res: Response): void {
   try {
-    const items = listReportDates();
+    const db = getDb();
+
+    // Shared visibility: all authenticated users see the same history.
+    // Deduplication: for each report_date, only the most recently uploaded run is returned.
+    // Older duplicate uploads for the same date are soft-hidden (still in DB for audit).
+    const rows = db.prepare(`
+      SELECT rr.id AS run_id, rr.report_date, rr.source_filename, rr.uploaded_at, rr.status,
+             rs.eligible_hqla, rs.gross_outflows, rs.net_cash_outflows, rs.lcr_ratio, rs.ratio_3m_lr
+      FROM report_runs rr
+      LEFT JOIN report_summaries rs ON rs.report_run_id = rr.id
+      WHERE rr.id = (
+        SELECT id FROM report_runs
+        WHERE report_date = rr.report_date
+        ORDER BY uploaded_at DESC LIMIT 1
+      )
+      ORDER BY rr.report_date DESC
+    `).all() as Array<{
+      run_id: string; report_date: string; source_filename: string; uploaded_at: string; status: string;
+      eligible_hqla: number | null; gross_outflows: number | null;
+      net_cash_outflows: number | null; lcr_ratio: number | null; ratio_3m_lr: number | null;
+    }>;
+
+    const items = rows.map((r: any) => ({
+      reportDate:      r.report_date,
+      runId:           r.run_id,
+      sourceFilename:  r.source_filename,
+      uploadedAt:      r.uploaded_at,
+      lcrRatio:        r.lcr_ratio,
+      eligibleHqla:    r.eligible_hqla ?? 0,
+      grossOutflows:   r.gross_outflows ?? 0,
+      netCashOutflows: r.net_cash_outflows ?? 0,
+      ratio3mLr:       r.ratio_3m_lr,
+      status:          r.status,
+    }));
+
     res.json({ success: true, items });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -207,15 +266,11 @@ export function handleDeleteRun(req: Request, res: Response): void {
     }
 
     const db = getDb();
-
-    // Check if run exists
-    const run = db.prepare('SELECT id FROM report_runs WHERE id = ?').get(runId);
-    if (!run) {
-      res.status(404).json({ success: false, error: 'Run not found' });
+    const exists = db.prepare('SELECT id FROM report_runs WHERE id = ?').get(runId);
+    if (!exists) {
+      res.status(404).json({ success: false, error: 'Run not found.' });
       return;
     }
-
-    // Delete children first, then parent
     db.prepare('DELETE FROM report_summaries WHERE report_run_id = ?').run(runId);
     db.prepare('DELETE FROM processed_rows WHERE report_run_id = ?').run(runId);
     db.prepare('DELETE FROM raw_rows WHERE report_run_id = ?').run(runId);
@@ -293,6 +348,11 @@ export function handleGetDebugRows(req: Request, res: Response): void {
     return;
   }
 
+  if (!canAccessRun(runId, req)) {
+    res.status(403).json({ success: false, error: 'Access denied.' });
+    return;
+  }
+
   try {
     const p  = parseInt(page     ?? '1',   10);
     const ps = parseInt(pageSize ?? '100', 10);
@@ -325,6 +385,11 @@ export function handleVerifyColumnL(req: Request, res: Response): void {
 
   if (!runId) {
     res.status(400).json({ success: false, error: 'Provide ?runId=<id>' });
+    return;
+  }
+
+  if (!canAccessRun(runId, req)) {
+    res.status(403).json({ success: false, error: 'Access denied.' });
     return;
   }
 
@@ -741,6 +806,10 @@ export function handleVerify7DayForecast(req: Request, res: Response): void {
     res.status(400).json({ success: false, error: 'Provide ?runId=<id>' });
     return;
   }
+  if (!canAccessRun(runId, req)) {
+    res.status(403).json({ success: false, error: 'Access denied.' });
+    return;
+  }
 
   try {
     loadReferenceDataFromDb();
@@ -907,6 +976,10 @@ export function handleVerifyLmgSummary(req: Request, res: Response): void {
 
   if (!runId) {
     res.status(400).json({ success: false, error: 'Provide ?runId=<id>' });
+    return;
+  }
+  if (!canAccessRun(runId, req)) {
+    res.status(403).json({ success: false, error: 'Access denied.' });
     return;
   }
 
@@ -1550,6 +1623,10 @@ export function handleVerifyCfTable(req: Request, res: Response): void {
     res.status(400).json({ success: false, error: 'Provide ?runId=<id>' });
     return;
   }
+  if (!canAccessRun(runId, req)) {
+    res.status(403).json({ success: false, error: 'Access denied.' });
+    return;
+  }
 
   try {
     loadReferenceDataFromDb();
@@ -2087,6 +2164,10 @@ export function handleLcrForecast(req: Request, res: Response): void {
     res.status(400).json({ success: false, error: 'Provide ?runId=<id>' });
     return;
   }
+  if (!canAccessRun(runId, req)) {
+    res.status(403).json({ success: false, error: 'Access denied.' });
+    return;
+  }
 
   try {
     loadReferenceDataFromDb();
@@ -2360,6 +2441,10 @@ export function handleIrrbb(req: Request, res: Response): void {
   const { runId } = req.query as { runId?: string };
   if (!runId) {
     res.status(400).json({ success: false, error: 'Provide ?runId=<id>' });
+    return;
+  }
+  if (!canAccessRun(runId, req)) {
+    res.status(403).json({ success: false, error: 'Access denied.' });
     return;
   }
   try {

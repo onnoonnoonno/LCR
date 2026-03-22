@@ -19,6 +19,58 @@ async function handleResponse<T>(res: Response): Promise<T> {
 }
 
 // ---------------------------------------------------------------------------
+// Auth token helpers (localStorage)
+// ---------------------------------------------------------------------------
+
+const TOKEN_KEY = 'lcr_auth_token';
+
+export function getToken(): string | null {
+  return localStorage.getItem(TOKEN_KEY);
+}
+
+export function setToken(token: string): void {
+  localStorage.setItem(TOKEN_KEY, token);
+}
+
+export function clearToken(): void {
+  localStorage.removeItem(TOKEN_KEY);
+}
+
+function authHeaders(): Record<string, string> {
+  const token = getToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+// ---------------------------------------------------------------------------
+// Auth API
+// ---------------------------------------------------------------------------
+
+export interface LoginResponse {
+  success: boolean;
+  token: string;
+  mustChangePassword: boolean;
+  user: { id: number; employeeId: string; role: string };
+}
+
+export async function login(employeeId: string, password: string): Promise<LoginResponse> {
+  const res = await fetch(`${base()}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ employeeId, password }),
+  });
+  return handleResponse<LoginResponse>(res);
+}
+
+export async function changePassword(currentPassword: string, newPassword: string): Promise<{ success: boolean }> {
+  const res = await fetch(`${base()}/api/auth/change-password`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ currentPassword, newPassword }),
+  });
+  return handleResponse<{ success: boolean }>(res);
+}
+
+// ---------------------------------------------------------------------------
 // Public types
 // ---------------------------------------------------------------------------
 
@@ -127,6 +179,7 @@ export async function uploadRaw(file: File, reportDate?: string): Promise<Upload
   if (reportDate) formData.append('reportDate', reportDate);
   const res = await fetch(`${base()}/api/upload-raw`, {
     method: 'POST',
+    headers: authHeaders(),
     body: formData,
   });
   return handleResponse<UploadRawResponse>(res);
@@ -143,7 +196,9 @@ export async function fetchRawRows(
     page: String(page),
     pageSize: String(pageSize),
   });
-  const res = await fetch(`${base()}/api/raw-rows?${params}`);
+  const res = await fetch(`${base()}/api/raw-rows?${params}`, {
+    headers: authHeaders(),
+  });
   return handleResponse<RawRowsResponse>(res);
 }
 
@@ -153,29 +208,29 @@ export interface ColumnLRow {
   acName:         string;
   refNo:          string;
   mapped:         boolean;
-  category:       string;   // L
-  middleCategory: string;   // M
-  n:              string;   // N (LCR Classification, with override)
+  category:       string;
+  middleCategory: string;
+  n:              string;
   nSource:        'override' | 'lookup';
-  customerType:   string;   // O (blank when L not in eligible set)
+  customerType:   string;
   oSource:        'lookup' | 'blank';
-  pKey:           string;   // P = M & "_" & O
-  baseCcyAmt:     number;   // H (raw)
-  q:              number;   // Q (sign-flipped H)
-  signFlip:       boolean;  // true if acCode in sign-flip list
-  rRate:          number | null; // R (assumption rate from P-key lookup)
+  pKey:           string;
+  baseCcyAmt:     number;
+  q:              number;
+  signFlip:       boolean;
+  rRate:          number | null;
   rSource:        'found' | 'not_found';
-  u:              number;   // U = ROUND(Q × R, 1)
-  s:              string;   // S (LCR Maturity: date string or "Tomorrow")
+  u:              number;
+  s:              string;
   sSource:        'override' | 'fallback';
-  t:              number | null; // T (days to maturity)
-  v:              string;   // V (Liquidity Maturity: override or S)
+  t:              number | null;
+  v:              string;
   vSource:        'override' | 'fallback';
-  w:              string;   // W (Liquidity Gap Asset/Liability from Account Mapping col F)
-  buckets:        number[]; // X-AG (10 bucket values)
-  ah:             boolean;  // AH check: Q == SUM(X:AG)
-  hitBucket:      string;   // label of the bucket that received Q
-  nonZeroCount:   number;   // number of non-zero buckets
+  w:              string;
+  buckets:        number[];
+  ah:             boolean;
+  hitBucket:      string;
+  nonZeroCount:   number;
 }
 
 export interface ColumnLResponse {
@@ -228,7 +283,9 @@ export async function fetchColumnL(
     page: String(page),
     pageSize: String(pageSize),
   });
-  const res = await fetch(`${base()}/api/verify/column-l?${params}`);
+  const res = await fetch(`${base()}/api/verify/column-l?${params}`, {
+    headers: authHeaders(),
+  });
   return handleResponse<ColumnLResponse>(res);
 }
 
@@ -282,7 +339,9 @@ export interface LmgSummaryResponse {
 /** Fetch LMG summary aggregation for a given report run. */
 export async function fetchLmgSummary(runId: string): Promise<LmgSummaryResponse> {
   const params = new URLSearchParams({ runId });
-  const res = await fetch(`${base()}/api/verify/lmg-summary?${params}`);
+  const res = await fetch(`${base()}/api/verify/lmg-summary?${params}`, {
+    headers: authHeaders(),
+  });
   return handleResponse<LmgSummaryResponse>(res);
 }
 
@@ -315,7 +374,9 @@ export async function fetchGapForecast(
   type: '7day' | '1month' | '3month' = '7day',
 ): Promise<ForecastResponse> {
   const params = new URLSearchParams({ runId, type });
-  const res = await fetch(`${base()}/api/verify/gap-forecast?${params}`);
+  const res = await fetch(`${base()}/api/verify/gap-forecast?${params}`, {
+    headers: authHeaders(),
+  });
   return handleResponse<ForecastResponse>(res);
 }
 
@@ -324,17 +385,17 @@ export interface CfTableResponse {
   runId:           string;
   reportDate:      string;
   day30End:        string;
-  baseOutflow:     number;   // D97
-  buybackOutflow:  number;   // D99
-  otherOutflow:    number;   // D101
-  grossOutflow:    number;   // D103
-  baseInflow:      number;   // D106
-  hoFacility:      number;   // D108
-  sumInflow:       number;   // D110
-  cappedInflow:    number;   // D112
-  netCashOutflow:  number;   // D115
-  hqla:            number;   // D117
-  lcr:             number | null; // D119
+  baseOutflow:     number;
+  buybackOutflow:  number;
+  otherOutflow:    number;
+  grossOutflow:    number;
+  baseInflow:      number;
+  hoFacility:      number;
+  sumInflow:       number;
+  cappedInflow:    number;
+  netCashOutflow:  number;
+  hqla:            number;
+  lcr:             number | null;
   outflowRows:     Array<{ pKey: string; amount: number; rate: number }>;
   inflowRows:      Array<{ pKey: string; amount: number; rate: number }>;
   totalRows:       number;
@@ -343,7 +404,9 @@ export interface CfTableResponse {
 /** Fetch 30-day CF Table for a given report run. */
 export async function fetchCfTable(runId: string): Promise<CfTableResponse> {
   const params = new URLSearchParams({ runId });
-  const res = await fetch(`${base()}/api/verify/cf-table?${params}`);
+  const res = await fetch(`${base()}/api/verify/cf-table?${params}`, {
+    headers: authHeaders(),
+  });
   return handleResponse<CfTableResponse>(res);
 }
 
@@ -367,7 +430,9 @@ export interface LcrForecastResponse {
 
 export async function fetchLcrForecast(runId: string): Promise<LcrForecastResponse> {
   const params = new URLSearchParams({ runId });
-  const res = await fetch(`${base()}/api/verify/lcr-forecast?${params}`);
+  const res = await fetch(`${base()}/api/verify/lcr-forecast?${params}`, {
+    headers: authHeaders(),
+  });
   return handleResponse<LcrForecastResponse>(res);
 }
 
@@ -390,7 +455,9 @@ export interface IrrbbResponse {
 
 export async function fetchIrrbb(runId: string): Promise<IrrbbResponse> {
   const params = new URLSearchParams({ runId });
-  const res = await fetch(`${base()}/api/verify/irrbb?${params}`);
+  const res = await fetch(`${base()}/api/verify/irrbb?${params}`, {
+    headers: authHeaders(),
+  });
   return handleResponse<IrrbbResponse>(res);
 }
 
@@ -428,7 +495,9 @@ export async function fetchBsRe33(
   pageSize = 100,
 ): Promise<BsRe33Response> {
   const params = new URLSearchParams({ runId, page: String(page), pageSize: String(pageSize) });
-  const res = await fetch(`${base()}/api/debug/bs-re33?${params}`);
+  const res = await fetch(`${base()}/api/debug/bs-re33?${params}`, {
+    headers: authHeaders(),
+  });
   return handleResponse<BsRe33Response>(res);
 }
 
@@ -451,6 +520,7 @@ export async function fetchRawCells(file: File): Promise<RawCellsResponse> {
   formData.append('file', file);
   const res = await fetch(`${base()}/api/debug/raw-cells`, {
     method: 'POST',
+    headers: authHeaders(),
     body: formData,
   });
   return handleResponse<RawCellsResponse>(res);
@@ -467,7 +537,9 @@ export async function fetchAccountMappings(
     pageSize: String(pageSize),
   });
   if (search.trim()) params.set('search', search.trim());
-  const res = await fetch(`${base()}/api/account-mappings?${params}`);
+  const res = await fetch(`${base()}/api/account-mappings?${params}`, {
+    headers: authHeaders(),
+  });
   return handleResponse<AccountMappingResponse>(res);
 }
 
@@ -481,37 +553,39 @@ export interface AccountMappingDistinct {
 
 /** Fetch distinct dropdown values for account mapping fields. */
 export async function fetchAccountMappingDistinct(): Promise<AccountMappingDistinct> {
-  const res = await fetch(`${base()}/api/account-mappings/distinct`);
+  const res = await fetch(`${base()}/api/account-mappings/distinct`, {
+    headers: authHeaders(),
+  });
   return handleResponse<AccountMappingDistinct>(res);
 }
 
 export type AccountMappingInput = Omit<AccountMappingRow, 'id'>;
 
-/** Create a new account mapping. Requires admin password. */
-export async function createAccountMapping(data: AccountMappingInput, password: string): Promise<{ success: boolean; id: number }> {
+/** Create a new account mapping. Requires admin JWT. */
+export async function createAccountMapping(data: AccountMappingInput): Promise<{ success: boolean; id: number }> {
   const res = await fetch(`${base()}/api/account-mappings`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-admin-password': password },
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: JSON.stringify(data),
   });
   return handleResponse<{ success: boolean; id: number }>(res);
 }
 
-/** Update an existing account mapping. Requires admin password. */
-export async function updateAccountMapping(id: number, data: AccountMappingInput, password: string): Promise<{ success: boolean }> {
+/** Update an existing account mapping. Requires admin JWT. */
+export async function updateAccountMapping(id: number, data: AccountMappingInput): Promise<{ success: boolean }> {
   const res = await fetch(`${base()}/api/account-mappings/${id}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json', 'x-admin-password': password },
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: JSON.stringify(data),
   });
   return handleResponse<{ success: boolean }>(res);
 }
 
-/** Delete an account mapping. Requires admin password. */
-export async function deleteAccountMapping(id: number, password: string): Promise<{ success: boolean }> {
+/** Delete an account mapping. Requires admin JWT. */
+export async function deleteAccountMapping(id: number): Promise<{ success: boolean }> {
   const res = await fetch(`${base()}/api/account-mappings/${id}`, {
     method: 'DELETE',
-    headers: { 'x-admin-password': password },
+    headers: authHeaders(),
   });
   return handleResponse<{ success: boolean }>(res);
 }
@@ -522,6 +596,7 @@ export async function uploadAndProcess(file: File): Promise<UploadResponse> {
   formData.append('file', file);
   const res = await fetch(`${base()}/api/upload`, {
     method: 'POST',
+    headers: authHeaders(),
     body: formData,
   });
   return handleResponse<UploadResponse>(res);
@@ -529,19 +604,22 @@ export async function uploadAndProcess(file: File): Promise<UploadResponse> {
 
 /** List all available report dates with summary snapshots. */
 export async function listHistory(): Promise<{ items: HistoryItem[] }> {
-  const res = await fetch(`${base()}/api/history`);
+  const res = await fetch(`${base()}/api/history`, {
+    headers: authHeaders(),
+  });
   return handleResponse<{ items: HistoryItem[] }>(res);
 }
 
 /** Get the full summary for a specific report date. */
 export async function getSummaryByDate(date: string): Promise<{ summary: SummaryRecord }> {
   const params = new URLSearchParams({ date });
-  const res = await fetch(`${base()}/api/summary?${params}`);
+  const res = await fetch(`${base()}/api/summary?${params}`, {
+    headers: authHeaders(),
+  });
   return handleResponse<{ summary: SummaryRecord }>(res);
 }
 
-/** Health check. */
-/** Fetch the most recently uploaded run (any user). */
+/** Fetch the most recently uploaded run. */
 export interface LatestRunResponse {
   success: boolean;
   found: boolean;
@@ -553,20 +631,24 @@ export interface LatestRunResponse {
 }
 
 export async function fetchLatestRun(): Promise<LatestRunResponse> {
-  const res = await fetch(`${base()}/api/latest-run`);
+  const res = await fetch(`${base()}/api/latest-run`, {
+    headers: authHeaders(),
+  });
   return handleResponse<LatestRunResponse>(res);
 }
 
 export async function checkHealth(): Promise<{ status: string }> {
-  const res = await fetch(`${base()}/api/health`);
+  const res = await fetch(`${base()}/api/health`, {
+    headers: authHeaders(),
+  });
   return handleResponse<{ status: string }>(res);
 }
 
-/** Delete a specific report run and all its associated data. Requires admin password. */
-export async function deleteHistoryRun(runId: string, password: string): Promise<{ success: boolean }> {
+/** Delete a specific report run and all its associated data. Requires auth. */
+export async function deleteHistoryRun(runId: string): Promise<{ success: boolean }> {
   const res = await fetch(`${base()}/api/history/run/${runId}`, {
     method: 'DELETE',
-    headers: { 'x-admin-password': password },
+    headers: authHeaders(),
   });
   return handleResponse<{ success: boolean }>(res);
 }

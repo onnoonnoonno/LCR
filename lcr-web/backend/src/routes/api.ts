@@ -1,17 +1,13 @@
 /**
  * API Router (DB-backed architecture)
  *
- * Endpoints:
- *   GET  /api/health          – liveness probe
- *   POST /api/upload          – upload Excel → run pipeline → return summary
- *   GET  /api/history         – list all available report dates
- *   GET  /api/summary         – get summary by ?date=YYYY-MM-DD or ?runId=<id>
- *   GET  /api/debug/rows      – processed row details (debug only, not shown in main UI)
+ * All routes require authentication (requireAuth + requirePasswordChanged).
+ * Admin-only mutation routes additionally require requireRole('admin').
  */
 
 import { Router, Request, Response } from 'express';
 import { uploadMiddleware } from '../middleware/upload';
-import { requireAdminPassword } from '../middleware/adminAuth';
+import { requireAuth, requirePasswordChanged, requireRole } from '../middleware/auth';
 import {
   handleUploadAndProcess,
   handleUploadRaw,
@@ -39,6 +35,10 @@ import {
 
 export const apiRouter = Router();
 
+// Apply authentication to all business API routes
+apiRouter.use(requireAuth);
+apiRouter.use(requirePasswordChanged);
+
 // ---------------------------------------------------------------------------
 // Multer wrapper
 // ---------------------------------------------------------------------------
@@ -57,7 +57,7 @@ function applyUpload(
 }
 
 // ---------------------------------------------------------------------------
-// Health check
+// Health check (still behind auth — internal tool)
 // ---------------------------------------------------------------------------
 apiRouter.get('/health', (_req: Request, res: Response) => {
   res.json({
@@ -87,19 +87,23 @@ apiRouter.get('/raw-rows', handleGetRawRows);
 // History retrieval
 // ---------------------------------------------------------------------------
 apiRouter.get('/history', handleListHistory);
-apiRouter.delete('/history/run/:runId', requireAdminPassword, handleDeleteRun);
-apiRouter.delete('/history/reset', handleResetHistory);
+apiRouter.delete('/history/run/:runId', requireRole('admin'), handleDeleteRun);
+apiRouter.delete('/history/reset', requireRole('admin'), handleResetHistory);
 apiRouter.get('/summary', handleGetSummary);
 apiRouter.get('/latest-run', handleGetLatestRun);
 
 // ---------------------------------------------------------------------------
-// Reference data inspection
+// Reference data inspection (read — any authenticated user)
 // ---------------------------------------------------------------------------
 apiRouter.get('/account-mappings', handleGetAccountMappings);
 apiRouter.get('/account-mappings/distinct', handleGetAccountMappingDistinct);
-apiRouter.post('/account-mappings', requireAdminPassword, handleCreateAccountMapping);
-apiRouter.put('/account-mappings/:id', requireAdminPassword, handleUpdateAccountMapping);
-apiRouter.delete('/account-mappings/:id', requireAdminPassword, handleDeleteAccountMapping);
+
+// ---------------------------------------------------------------------------
+// Reference data mutations (admin only)
+// ---------------------------------------------------------------------------
+apiRouter.post('/account-mappings', requireRole('admin'), handleCreateAccountMapping);
+apiRouter.put('/account-mappings/:id', requireRole('admin'), handleUpdateAccountMapping);
+apiRouter.delete('/account-mappings/:id', requireRole('admin'), handleDeleteAccountMapping);
 
 // ---------------------------------------------------------------------------
 // Verification routes (step-by-step column verification)
@@ -112,8 +116,8 @@ apiRouter.get('/verify/lcr-forecast', handleLcrForecast);
 apiRouter.get('/verify/irrbb', handleIrrbb);
 
 // ---------------------------------------------------------------------------
-// Debug routes (not linked from main UI)
+// Debug routes (admin only)
 // ---------------------------------------------------------------------------
-apiRouter.get('/debug/rows', handleGetDebugRows);
-apiRouter.get('/debug/bs-re33', handleDebugBsRe33);
-apiRouter.post('/debug/raw-cells', applyUpload, handleDebugRawCells);
+apiRouter.get('/debug/rows', requireRole('admin'), handleGetDebugRows);
+apiRouter.get('/debug/bs-re33', requireRole('admin'), handleDebugBsRe33);
+apiRouter.post('/debug/raw-cells', requireRole('admin'), applyUpload, handleDebugRawCells);

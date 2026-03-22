@@ -84,13 +84,31 @@ function applySchema(db: Database.Database): void {
     -- Report runs
     -- -----------------------------------------------------------------------
 
+    -- -----------------------------------------------------------------------
+    -- Users (authentication)
+    -- -----------------------------------------------------------------------
+
+    CREATE TABLE IF NOT EXISTS users (
+      id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+      employee_id          TEXT    NOT NULL UNIQUE,
+      password_hash        TEXT    NOT NULL,
+      role                 TEXT    NOT NULL DEFAULT 'user',
+      must_change_password INTEGER NOT NULL DEFAULT 1,
+      created_at           TEXT    NOT NULL DEFAULT (datetime('now'))
+    );
+
+    -- -----------------------------------------------------------------------
+    -- Report runs
+    -- -----------------------------------------------------------------------
+
     CREATE TABLE IF NOT EXISTS report_runs (
       id              TEXT    PRIMARY KEY,
       report_date     TEXT    NOT NULL,
       uploaded_at     TEXT    NOT NULL,
       source_filename TEXT    NOT NULL,
       status          TEXT    NOT NULL DEFAULT 'pending',
-      error_message   TEXT
+      error_message   TEXT,
+      user_id         INTEGER REFERENCES users(id)
     );
 
     CREATE INDEX IF NOT EXISTS idx_rr_date ON report_runs(report_date);
@@ -207,5 +225,10 @@ function applySchema(db: Database.Database): void {
     db.exec(`ALTER TABLE report_runs ADD COLUMN irrbb_data TEXT`);
   } catch {
     // Column already exists
+  }
+  try {
+    db.exec(`ALTER TABLE report_runs ADD COLUMN user_id INTEGER REFERENCES users(id)`);
+  } catch {
+    // Column already exists — existing runs keep user_id = NULL (owned by any admin)
   }
 }

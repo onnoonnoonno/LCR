@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import { apiRouter } from './routes/api';
+import { authRouter } from './routes/authRoutes';
 import { getDb } from './db/client';
 import { seedReferenceData } from './db/seed';
 
@@ -14,9 +15,22 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
 console.log('=== BACKEND FROM LCR_REPO / TEST 001 ===');
 
 // ---------------------------------------------------------------------------
-// CORS — OPEN FOR TEST (temporary)
+// CORS — restricted to configured origins
 // ---------------------------------------------------------------------------
-app.use(cors());
+const allowedOrigins = (process.env.CORS_ORIGINS ?? 'http://localhost:5173')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
+
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow requests with no origin (e.g. server-to-server, curl)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    callback(new Error(`CORS: origin "${origin}" not allowed.`));
+  },
+  credentials: true,
+}));
 app.options('*', cors());
 
 // ---------------------------------------------------------------------------
@@ -57,7 +71,12 @@ app.get('/api/cors-test', (_req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// Routes
+// Auth routes (public — no auth middleware here)
+// ---------------------------------------------------------------------------
+app.use('/api/auth', authRouter);
+
+// ---------------------------------------------------------------------------
+// Business API routes
 // ---------------------------------------------------------------------------
 app.use('/api', apiRouter);
 
@@ -81,7 +100,7 @@ app.use(
 // ---------------------------------------------------------------------------
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`[lcr-web] Backend listening on http://0.0.0.0:${PORT}`);
-  console.log(`[lcr-web] CORS: OPEN FOR TEST`);
+  console.log(`[lcr-web] CORS allowed origins: ${allowedOrigins.join(', ')}`);
   console.log(`[lcr-web] NODE_ENV: ${process.env.NODE_ENV ?? 'development'}`);
 });
 

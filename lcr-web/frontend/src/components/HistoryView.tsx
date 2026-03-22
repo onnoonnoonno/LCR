@@ -18,7 +18,6 @@ import {
   IrrbbData,
 } from '../services/api';
 import { IrrbbTable } from './IrrbbTable';
-import { PasswordModal } from './PasswordModal';
 
 // ---------------------------------------------------------------------------
 // Shared types / constants — identical to DashboardView
@@ -89,7 +88,7 @@ function changeColor(ch: number | null, dir: 'lte' | 'gte'): string | undefined 
 // Component
 // ---------------------------------------------------------------------------
 
-interface Props { onSelectRun: (runId: string) => void; }
+interface Props { onSelectRun: (runId: string) => void; userRole?: string; }
 
 type LoadedReport = {
   item: HistoryItem;
@@ -106,7 +105,8 @@ type LoadedReport = {
 
 const PAGE_SIZE = 5;
 
-export function HistoryView({ onSelectRun: _onSelectRun }: Props) {
+export function HistoryView({ onSelectRun: _onSelectRun, userRole }: Props) {
+  const isAdmin = userRole === 'admin';
   const [items, setItems]               = useState<HistoryItem[]>([]);
   const [loading, setLoading]           = useState(true);
   const [error, setError]               = useState<string | null>(null);
@@ -117,10 +117,8 @@ export function HistoryView({ onSelectRun: _onSelectRun }: Props) {
   const [page, setPage]                 = useState(0);
   const [popupItem, setPopupItem]       = useState<ItemKey | null>(null);
   const [deleteTarget, setDeleteTarget]   = useState<HistoryItem | null>(null);
-  // Password modal for delete
-  const [deletePasswordFor, setDeletePasswordFor] = useState<HistoryItem | null>(null);
   const [deleteSubmitting, setDeleteSubmitting]   = useState(false);
-  const [deleteAuthError, setDeleteAuthError]     = useState<string | null>(null);
+  const [deleteError, setDeleteError]             = useState<string | null>(null);
 
   // ---------------------------------------------------------------
   // Load history list
@@ -204,29 +202,23 @@ export function HistoryView({ onSelectRun: _onSelectRun }: Props) {
   /** Step 1: user clicks Delete → show confirm modal */
   function handleDeleteRequest(item: HistoryItem) {
     setDeleteTarget(item);
+    setDeleteError(null);
   }
 
-  /** Step 2: user confirms intent → show password modal */
-  function handleDeleteConfirmed() {
+  /** Step 2: user confirms → perform delete via JWT auth */
+  async function handleDeleteConfirmed() {
     if (!deleteTarget) return;
-    setDeletePasswordFor(deleteTarget);
-    setDeleteTarget(null);
-    setDeleteAuthError(null);
-  }
-
-  /** Step 3: user enters password → perform delete */
-  async function handleDeleteWithPassword(password: string) {
-    if (!deletePasswordFor) return;
     setDeleteSubmitting(true);
-    setDeleteAuthError(null);
+    setDeleteError(null);
+    const target = deleteTarget;
+    setDeleteTarget(null);
     try {
-      await deleteHistoryRun(deletePasswordFor.runId, password);
-      if (report?.item.runId === deletePasswordFor.runId) { setReport(null); setSelectedDate(null); }
-      setDeletePasswordFor(null);
+      await deleteHistoryRun(target.runId);
+      if (report?.item.runId === target.runId) { setReport(null); setSelectedDate(null); }
       reload();
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Failed to delete';
-      setDeleteAuthError(msg);
+      setDeleteError(msg);
     } finally {
       setDeleteSubmitting(false);
     }
@@ -445,7 +437,7 @@ export function HistoryView({ onSelectRun: _onSelectRun }: Props) {
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th>Report Date</th><th>Source File</th><th className="text-right">LCR %</th><th className="text-right">3M Liquidity Ratio</th><th>Status</th><th>Uploaded</th><th></th><th></th>
+                    <th>Report Date</th><th>Source File</th><th className="text-right">LCR %</th><th className="text-right">3M Liquidity Ratio</th><th>Status</th><th>Uploaded</th><th></th>{isAdmin && <th></th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -469,9 +461,11 @@ export function HistoryView({ onSelectRun: _onSelectRun }: Props) {
                         <td onClick={() => loadReport(item)}>
                           {isLoading ? <div className="spinner" style={{ width: 18, height: 18, borderWidth: 2 }} /> : <span style={{ color: isSelected ? 'var(--color-primary)' : 'var(--color-text-muted)', fontSize: '0.8rem', fontWeight: isSelected ? 700 : 400 }}>{isSelected ? 'Selected' : 'View'}</span>}
                         </td>
-                        <td>
-                          <button className="btn btn--sm btn--ghost" style={{ color: 'var(--color-error)', fontSize: '0.78rem', padding: '0.2rem 0.5rem' }} onClick={(e) => { e.stopPropagation(); handleDeleteRequest(item); }} title="Delete this report">{'\u2715'}</button>
-                        </td>
+                        {isAdmin && (
+                          <td>
+                            <button className="btn btn--sm btn--ghost" style={{ color: 'var(--color-error)', fontSize: '0.78rem', padding: '0.2rem 0.5rem' }} onClick={(e) => { e.stopPropagation(); handleDeleteRequest(item); }} title="Delete this report">{'\u2715'}</button>
+                          </td>
+                        )}
                       </tr>
                     );
                   })}
@@ -503,7 +497,7 @@ export function HistoryView({ onSelectRun: _onSelectRun }: Props) {
       {report && !loadingDate && renderRegulatoryIndicators()}
       {popupItem !== null && renderPopup()}
 
-      {/* Step 1: confirm intent */}
+      {/* Delete confirmation */}
       {deleteTarget && (
         <div className="modal-overlay" onClick={() => setDeleteTarget(null)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '480px' }}>
@@ -511,24 +505,20 @@ export function HistoryView({ onSelectRun: _onSelectRun }: Props) {
             <p style={{ margin: '0 0 0.5rem' }}>Are you sure you want to delete the report for <strong>{deleteTarget.reportDate}</strong>?</p>
             <p style={{ margin: '0 0 1rem', fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>This will permanently delete the run, raw data, processed data, and summary. This action cannot be undone.</p>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
-              <button className="btn btn--ghost" onClick={() => setDeleteTarget(null)}>Cancel</button>
-              <button className="btn btn--primary" style={{ background: 'var(--color-error)' }} onClick={handleDeleteConfirmed}>Continue</button>
+              <button className="btn btn--ghost" onClick={() => setDeleteTarget(null)} disabled={deleteSubmitting}>Cancel</button>
+              <button className="btn btn--primary" style={{ background: 'var(--color-error)' }} onClick={handleDeleteConfirmed} disabled={deleteSubmitting}>
+                {deleteSubmitting ? 'Deleting…' : 'Delete'}
+              </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Step 2: password confirmation */}
-      {deletePasswordFor && (
-        <PasswordModal
-          title="Confirm Delete"
-          description={`Enter the admin password to permanently delete the report for ${deletePasswordFor.reportDate}.`}
-          confirmLabel="Delete"
-          onConfirm={handleDeleteWithPassword}
-          onCancel={() => { setDeletePasswordFor(null); setDeleteAuthError(null); }}
-          submitting={deleteSubmitting}
-          error={deleteAuthError}
-        />
+      {deleteError && (
+        <div style={{ position: 'fixed', bottom: '1.5rem', right: '1.5rem', background: 'var(--color-error-bg, #fef2f2)', color: 'var(--color-error)', padding: '0.75rem 1rem', borderRadius: '8px', fontSize: '0.85rem', zIndex: 3000, boxShadow: '0 2px 12px rgba(0,0,0,0.15)' }}>
+          {deleteError}
+          <button className="btn btn--sm btn--ghost" style={{ marginLeft: '0.75rem' }} onClick={() => setDeleteError(null)}>{'\u2715'}</button>
+        </div>
       )}
     </div>
   );

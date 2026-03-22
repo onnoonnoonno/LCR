@@ -19,7 +19,6 @@ import {
   AccountMappingInput,
   AccountMappingDistinct,
 } from '../services/api';
-import { PasswordModal } from './PasswordModal';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -40,7 +39,10 @@ const EMPTY_FORM: AccountMappingInput = {
 // Component
 // ---------------------------------------------------------------------------
 
-export function AccountMappingView() {
+interface Props { userRole?: string; }
+
+export function AccountMappingView({ userRole }: Props) {
+  const isAdmin = userRole === 'admin';
   const [rows, setRows]             = useState<AccountMappingRow[]>([]);
   const [page, setPage]             = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -64,15 +66,9 @@ export function AccountMappingView() {
   // Delete confirmation
   const [deleteTarget, setDeleteTarget] = useState<AccountMappingRow | null>(null);
 
-  // Password modal — shared for save and delete
-  // pendingAction holds the payload needed once the password is confirmed
-  type PendingAction =
-    | { kind: 'save';   form: AccountMappingInput; editId: number | null }
-    | { kind: 'delete'; target: AccountMappingRow };
-
-  const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
-  const [authSubmitting, setAuthSubmitting] = useState(false);
-  const [authError, setAuthError]           = useState<string | null>(null);
+  // Submitting state for save / delete actions
+  const [actionSubmitting, setActionSubmitting] = useState(false);
+  const [actionError, setActionError]           = useState<string | null>(null);
 
   // -------------------------------------------------------------------------
   // Data loading
@@ -148,67 +144,56 @@ export function AccountMappingView() {
     setForm((prev) => ({ ...prev, [field]: value }));
   }
 
-  /** Called when user clicks "Save" in the form — validates then opens password prompt. */
-  function handleSaveRequest() {
+  /** Called when user clicks "Save" in the form — validates then calls API directly. */
+  async function handleSaveRequest() {
     if (!form.acCode.trim()) {
       setFormError('Account Code is required.');
       return;
     }
     setFormError(null);
-    setPendingAction({ kind: 'save', form: { ...form }, editId: editingRow?.id ?? null });
-    setAuthError(null);
+    setActionSubmitting(true);
+    setActionError(null);
+
+    try {
+      const editId = editingRow?.id ?? null;
+      if (editId !== null) {
+        await updateAccountMapping(editId, { ...form });
+      } else {
+        await createAccountMapping({ ...form });
+      }
+      closeModal();
+      await loadDistinct();
+      await loadPage(editId !== null ? page : 1);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setActionError(msg);
+    } finally {
+      setActionSubmitting(false);
+    }
   }
 
   // -------------------------------------------------------------------------
   // Delete helpers
   // -------------------------------------------------------------------------
 
-  /** Called when user confirms delete in the confirmation modal — opens password prompt. */
-  function handleDeleteRequest() {
+  /** Called when user confirms delete in the confirmation modal — calls API directly. */
+  async function handleDeleteConfirm() {
     if (!deleteTarget) return;
-    setPendingAction({ kind: 'delete', target: deleteTarget });
+    setActionSubmitting(true);
+    setActionError(null);
+    const target = deleteTarget;
     setDeleteTarget(null);
-    setAuthError(null);
-  }
-
-  // -------------------------------------------------------------------------
-  // Password confirmation handler (runs the actual API call)
-  // -------------------------------------------------------------------------
-
-  async function handlePasswordConfirm(password: string) {
-    if (!pendingAction) return;
-    setAuthSubmitting(true);
-    setAuthError(null);
 
     try {
-      if (pendingAction.kind === 'save') {
-        const { form: f, editId } = pendingAction;
-        if (editId !== null) {
-          await updateAccountMapping(editId, f, password);
-        } else {
-          await createAccountMapping(f, password);
-        }
-        setPendingAction(null);
-        closeModal();
-        await loadDistinct();
-        await loadPage(editId !== null ? page : 1);
-      } else {
-        await deleteAccountMapping(pendingAction.target.id, password);
-        setPendingAction(null);
-        await loadDistinct();
-        await loadPage(page);
-      }
+      await deleteAccountMapping(target.id);
+      await loadDistinct();
+      await loadPage(page);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      setAuthError(msg);
+      setActionError(msg);
     } finally {
-      setAuthSubmitting(false);
+      setActionSubmitting(false);
     }
-  }
-
-  function handlePasswordCancel() {
-    setPendingAction(null);
-    setAuthError(null);
   }
 
   // -------------------------------------------------------------------------
@@ -226,9 +211,11 @@ export function AccountMappingView() {
               Total Mappings: {total.toLocaleString()}
             </span>
           </div>
-          <button className="btn btn--primary" onClick={openAddModal}>
-            + Add Account
-          </button>
+          {isAdmin && (
+            <button className="btn btn--primary" onClick={openAddModal}>
+              + Add Account
+            </button>
+          )}
         </div>
 
         {/* Search bar */}
@@ -278,7 +265,7 @@ export function AccountMappingView() {
                     <th>Middle Category</th>
                     <th>LCR Classification</th>
                     <th>Asset/Liability</th>
-                    <th style={{ width: '120px', textAlign: 'center' }}>Actions</th>
+                    {isAdmin && <th style={{ width: '120px', textAlign: 'center' }}>Actions</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -298,22 +285,24 @@ export function AccountMappingView() {
                       <td style={{ fontWeight: 600 }}>{r.middleCategory}</td>
                       <td className="mono" style={{ fontSize: '0.75rem' }}>{r.hqlaOrCashflowType}</td>
                       <td>{r.assetLiabilityType}</td>
-                      <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
-                        <button
-                          className="btn btn--sm btn--ghost"
-                          onClick={() => openEditModal(r)}
-                          style={{ marginRight: '0.25rem' }}
-                        >
-                          Edit
-                        </button>
-                        <button
-                          className="btn btn--sm btn--ghost"
-                          style={{ color: 'var(--color-error)' }}
-                          onClick={() => setDeleteTarget(r)}
-                        >
-                          Delete
-                        </button>
-                      </td>
+                      {isAdmin && (
+                        <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
+                          <button
+                            className="btn btn--sm btn--ghost"
+                            onClick={() => openEditModal(r)}
+                            style={{ marginRight: '0.25rem' }}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            className="btn btn--sm btn--ghost"
+                            style={{ color: 'var(--color-error)' }}
+                            onClick={() => setDeleteTarget(r)}
+                          >
+                            Delete
+                          </button>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -449,12 +438,24 @@ export function AccountMappingView() {
               </label>
             </div>
 
+            {actionError && (
+              <div style={{
+                padding: '0.5rem 0.75rem',
+                marginTop: '0.75rem',
+                background: 'var(--color-error-bg, #fef2f2)',
+                color: 'var(--color-error)',
+                borderRadius: 'var(--radius, 6px)',
+                fontSize: '0.85rem',
+              }}>
+                {actionError}
+              </div>
+            )}
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '1.25rem' }}>
-              <button className="btn btn--ghost" onClick={closeModal}>
+              <button className="btn btn--ghost" onClick={closeModal} disabled={actionSubmitting}>
                 Cancel
               </button>
-              <button className="btn btn--primary" onClick={handleSaveRequest}>
-                Save
+              <button className="btn btn--primary" onClick={handleSaveRequest} disabled={actionSubmitting}>
+                {actionSubmitting ? 'Saving…' : 'Save'}
               </button>
             </div>
           </div>
@@ -470,40 +471,23 @@ export function AccountMappingView() {
             <h3 style={{ marginTop: 0, marginBottom: '0.75rem' }}>Delete Account Mapping</h3>
             <p style={{ margin: '0 0 1rem' }}>
               Are you sure you want to delete <strong>{deleteTarget.acCode}</strong> ({deleteTarget.acName})?
+              This cannot be undone.
             </p>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
-              <button className="btn btn--ghost" onClick={() => setDeleteTarget(null)}>
+              <button className="btn btn--ghost" onClick={() => setDeleteTarget(null)} disabled={actionSubmitting}>
                 Cancel
               </button>
               <button
                 className="btn btn--primary"
                 style={{ background: 'var(--color-error)' }}
-                onClick={handleDeleteRequest}
+                onClick={handleDeleteConfirm}
+                disabled={actionSubmitting}
               >
-                Continue
+                {actionSubmitting ? 'Deleting…' : 'Delete'}
               </button>
             </div>
           </div>
         </div>
-      )}
-
-      {/* ----------------------------------------------------------------- */}
-      {/* Password Confirmation Modal (shared for save + delete)            */}
-      {/* ----------------------------------------------------------------- */}
-      {pendingAction && (
-        <PasswordModal
-          title={pendingAction.kind === 'save'
-            ? (pendingAction.editId !== null ? 'Confirm Edit' : 'Confirm Add')
-            : 'Confirm Delete'}
-          description={pendingAction.kind === 'save'
-            ? 'Enter the admin password to save this account mapping.'
-            : `Enter the admin password to permanently delete "${pendingAction.target.acCode}".`}
-          confirmLabel={pendingAction.kind === 'save' ? 'Save' : 'Delete'}
-          onConfirm={handlePasswordConfirm}
-          onCancel={handlePasswordCancel}
-          submitting={authSubmitting}
-          error={authError}
-        />
       )}
     </div>
   );

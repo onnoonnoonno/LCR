@@ -34,6 +34,7 @@ export function uploadRawData(
   buffer: Buffer,
   originalFilename: string,
   manualReportDate?: string,
+  userId?: number,
 ): UploadResult {
   const db = getDb();
 
@@ -45,9 +46,9 @@ export function uploadRawData(
   const now   = new Date().toISOString();
 
   db.prepare(`
-    INSERT INTO report_runs (id, report_date, uploaded_at, source_filename, status)
-    VALUES (?, ?, ?, ?, 'pending')
-  `).run(runId, reportDate, now, originalFilename);
+    INSERT INTO report_runs (id, report_date, uploaded_at, source_filename, status, user_id)
+    VALUES (?, ?, ?, ?, 'pending', ?)
+  `).run(runId, reportDate, now, originalFilename, userId ?? null);
 
   // Parse Excel
   const { rows } = parseExcelBuffer(buffer);

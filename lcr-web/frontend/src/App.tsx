@@ -1,17 +1,13 @@
 /**
  * LCR Management — Main Application
  *
- * Tabs:
- *   Dashboard         — KRI summary table (default)
- *   LCR               — LCR detail view
- *   3M Liquidity Ratio— 3M LR detail
- *   12M Interest Rate — placeholder
- *   GAP               — 7D / 1M / 3M combined
- *   History           — browse previously stored results
- *   Account Mapping   — CRUD for account mapping reference
+ * Auth flow:
+ *   1. No token → LoginView
+ *   2. Token + mustChangePassword → ChangePasswordView
+ *   3. Token + password changed → main app
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { DashboardView, ViewMode } from './components/DashboardView';
 import { VerifyView } from './components/VerifyView';
 import { CfTableView } from './components/CfTableView';
@@ -19,10 +15,13 @@ import { HistoryView } from './components/HistoryView';
 import { BsRe33DebugView } from './components/BsRe33DebugView';
 import { RawUploadDebugView } from './components/RawUploadDebugView';
 import { AccountMappingView } from './components/AccountMappingView';
+import { LoginView } from './components/LoginView';
+import { ChangePasswordView } from './components/ChangePasswordView';
+import { getToken, clearToken } from './services/api';
 import nhBankLogo from './assets/NH_Bank.png';
 
 // ---------------------------------------------------------------------------
-// State
+// Types
 // ---------------------------------------------------------------------------
 
 type Tab = 'dashboard' | 'lcr' | '3m_lr' | '12m_ir' | 'gap'
@@ -31,15 +30,76 @@ type Tab = 'dashboard' | 'lcr' | '3m_lr' | '12m_ir' | 'gap'
 
 const DASHBOARD_GROUP: readonly string[] = ['dashboard', 'lcr', '3m_lr', '12m_ir', 'gap'];
 
+interface AuthUser {
+  id: number;
+  employeeId: string;
+  role: string;
+}
+
 // ---------------------------------------------------------------------------
 // App
 // ---------------------------------------------------------------------------
 
 export default function App() {
-  const [tab, setTab] = useState<Tab>('dashboard');
+  const [authUser, setAuthUser]                   = useState<AuthUser | null>(null);
+  const [mustChangePassword, setMustChangePassword] = useState(false);
+  const [tab, setTab]                             = useState<Tab>('dashboard');
+  const [selectedRunId, setSelectedRunId]         = useState<string | undefined>(undefined);
 
-  // When a run is selected from History, switch to Dashboard with that runId
-  const [selectedRunId, setSelectedRunId] = useState<string | undefined>(undefined);
+  // Restore session from localStorage on mount
+  useEffect(() => {
+    const token = getToken();
+    if (!token) return;
+    // Decode JWT payload (non-verifying — server will reject if expired)
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1])) as {
+        userId: number; employeeId: string; role: string; mustChangePassword: boolean; exp: number;
+      };
+      if (payload.exp && payload.exp * 1000 < Date.now()) {
+        clearToken();
+        return;
+      }
+      setAuthUser({ id: payload.userId, employeeId: payload.employeeId, role: payload.role });
+      setMustChangePassword(payload.mustChangePassword);
+    } catch {
+      clearToken();
+    }
+  }, []);
+
+  function handleLogin(user: AuthUser, mustChange: boolean) {
+    setAuthUser(user);
+    setMustChangePassword(mustChange);
+  }
+
+  function handlePasswordChanged() {
+    setMustChangePassword(false);
+  }
+
+  function handleLogout() {
+    clearToken();
+    setAuthUser(null);
+    setMustChangePassword(false);
+    setTab('dashboard');
+    setSelectedRunId(undefined);
+  }
+
+  // -- Auth gates --
+
+  if (!authUser) {
+    return <LoginView onLogin={handleLogin} />;
+  }
+
+  if (mustChangePassword) {
+    return (
+      <ChangePasswordView
+        employeeId={authUser.employeeId}
+        onChanged={handlePasswordChanged}
+        onLogout={handleLogout}
+      />
+    );
+  }
+
+  // -- Main app --
 
   function handleSelectFromHistory(runId: string) {
     setSelectedRunId(runId);
@@ -94,6 +154,14 @@ export default function App() {
             >
               Account Mapping
             </button>
+            <button
+              className="nav-tab"
+              onClick={handleLogout}
+              style={{ marginLeft: 'auto', fontSize: '0.8rem', color: 'var(--color-text-muted)' }}
+              title={`Signed in as ${authUser.employeeId}`}
+            >
+              {authUser.employeeId} · Sign out
+            </button>
           </nav>
         </div>
       </header>
@@ -109,8 +177,8 @@ export default function App() {
             />
           )}
           {tab === 'forecast' && <VerifyView externalRunId={selectedRunId} />}
-          {tab === 'history'  && <HistoryView onSelectRun={handleSelectFromHistory} />}
-          {tab === 'mapping'  && <AccountMappingView />}
+          {tab === 'history'  && <HistoryView onSelectRun={handleSelectFromHistory} userRole={authUser.role} />}
+          {tab === 'mapping'  && <AccountMappingView userRole={authUser.role} />}
           {tab === 'cftable'  && <CfTableView />}
           {tab === 'rawdebug' && <RawUploadDebugView />}
           {tab === 'bsre33'   && <BsRe33DebugView />}
