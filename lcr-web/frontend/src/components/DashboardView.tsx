@@ -12,20 +12,25 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { UploadWithDate } from './UploadWithDate';
 import { ExpandableCard } from './ExpandableCard';
+import { IrrbbTable } from './IrrbbTable';
+import nhBankLogo from '../assets/NH_Bank.png';
+import logoImg from '../assets/Logo.png';
 import {
   listHistory,
   fetchLatestRun,
   fetchLmgSummary,
   fetchGapForecast,
   fetchLcrForecast,
+  fetchIrrbb,
   uploadRaw,
   HistoryItem,
   LmgSummaryResponse,
   ForecastResponse,
   LcrForecastResponse,
+  IrrbbData,
 } from '../services/api';
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
   ReferenceLine, ResponsiveContainer, Dot,
 } from 'recharts';
 
@@ -84,11 +89,11 @@ function checkBreach(value: number | null, cfg: ItemConfig): 'N' | 'Y' | 'Crisis
   return 'N';
 }
 
-function extractValues(lmg: LmgSummaryResponse): Record<ItemKey, number | null> {
+function extractValues(lmg: LmgSummaryResponse, irrbb?: IrrbbData | null): Record<ItemKey, number | null> {
   return {
     lcr:     lmg.lcrPercent !== null ? lmg.lcrPercent * 100 : null,
     '3m_lr': lmg.ratio3MLR  !== null ? lmg.ratio3MLR  * 100 : null,
-    '12m_ir': null,
+    '12m_ir': irrbb?.ratio != null ? irrbb.ratio * 100 : null,
     '7d_gap': lmg.kri['7D'].ratio !== null ? lmg.kri['7D'].ratio * 100 : null,
     '1m_gap': lmg.kri['1M'].ratio !== null ? lmg.kri['1M'].ratio * 100 : null,
     '3m_gap': lmg.kri['3M'].ratio !== null ? lmg.kri['3M'].ratio * 100 : null,
@@ -152,13 +157,16 @@ export function DashboardView({ view, externalRunId, onNavigate }: Props) {
   const [fc7d, setFc7d]     = useState<ForecastResponse | null>(null);
   const [fc1m, setFc1m]     = useState<ForecastResponse | null>(null);
   const [fc3m, setFc3m]     = useState<ForecastResponse | null>(null);
+  const [irrbbData, setIrrbbData] = useState<IrrbbData | null>(null);
 
   const [popupItem, setPopupItem]   = useState<ItemKey | null>(null);
   const [showUpload, setShowUpload] = useState(false);
   const [historyItems, setHistoryItems] = useState<HistoryItem[]>([]);
   const [lcrForecast, setLcrForecast] = useState<LcrForecastResponse | null>(null);
   const [chartPopup, setChartPopup] = useState<'actual' | 'forecast' | null>(null);
-  const [forecastDateFilter, setForecastDateFilter] = useState('');
+  const [fcDateFrom, setFcDateFrom] = useState('');
+  const [fcDateTo,   setFcDateTo]   = useState('');
+  const [uploadProcessing, setUploadProcessing] = useState(false);
 
   // ----------------------------------------------------------
   // Data loading
@@ -213,25 +221,33 @@ export function DashboardView({ view, externalRunId, onNavigate }: Props) {
       setReportDate(currentDateStr);
       setPrevDate(prevDateStr);
 
-      const [lmgData, f7d, f1m, f3m, lcrFc] = await Promise.all([
+      const [lmgData, f7d, f1m, f3m, lcrFc, irrbbRes] = await Promise.all([
         fetchLmgSummary(currentRunId!),
         fetchGapForecast(currentRunId!, '7day'),
         fetchGapForecast(currentRunId!, '1month'),
         fetchGapForecast(currentRunId!, '3month'),
         fetchLcrForecast(currentRunId!),
+        fetchIrrbb(currentRunId!).catch(() => null),
       ]);
 
+      const currentIrrbb = irrbbRes?.irrbb ?? null;
+      console.debug('[Dashboard] loadData — runId:', currentRunId, 'date:', currentDateStr, 'irrbb:', currentIrrbb ? `ratio=${currentIrrbb.ratio}` : 'null');
       setLmg(lmgData);
       setFc7d(f7d);
       setFc1m(f1m);
       setFc3m(f3m);
       setLcrForecast(lcrFc);
-      setCurrentValues(extractValues(lmgData));
+      setIrrbbData(currentIrrbb);
+      setCurrentValues(extractValues(lmgData, currentIrrbb));
 
       if (prevRunId) {
         try {
-          const prevLmg = await fetchLmgSummary(prevRunId);
-          setPreviousValues(extractValues(prevLmg));
+          const [prevLmg, prevIrrbbRes] = await Promise.all([
+            fetchLmgSummary(prevRunId),
+            fetchIrrbb(prevRunId).catch(() => null),
+          ]);
+          const prevIrrbb = prevIrrbbRes?.irrbb ?? null;
+          setPreviousValues(extractValues(prevLmg, prevIrrbb));
         } catch { setPreviousValues(null); }
       } else {
         setPreviousValues(null);
@@ -252,19 +268,25 @@ export function DashboardView({ view, externalRunId, onNavigate }: Props) {
   async function handleFile(file: File, date: string) {
     try {
       setLoading(true);
+      setUploadProcessing(true);
       setShowUpload(false);
 
       const res = await uploadRaw(file, date);
       const newDate = res.reportDate;
+      console.debug('[Dashboard] upload complete — runId:', res.runId, 'date:', newDate);
 
-      // Fetch KRI data for the new run
-      const [lmgData, f7d, f1m, f3m, lcrFc] = await Promise.all([
+      // Fetch KRI data for the new run (including IRRBB)
+      const [lmgData, f7d, f1m, f3m, lcrFc, irrbbRes] = await Promise.all([
         fetchLmgSummary(res.runId),
         fetchGapForecast(res.runId, '7day'),
         fetchGapForecast(res.runId, '1month'),
         fetchGapForecast(res.runId, '3month'),
         fetchLcrForecast(res.runId),
+        fetchIrrbb(res.runId).catch(() => null),
       ]);
+
+      const newIrrbb = irrbbRes?.irrbb ?? null;
+      console.debug('[Dashboard] upload irrbb:', newIrrbb ? `ratio=${newIrrbb.ratio}` : 'null');
 
       // Find previous from history (date < new upload date)
       let prevRunId: string | null = null;
@@ -283,7 +305,8 @@ export function DashboardView({ view, externalRunId, onNavigate }: Props) {
       setFc1m(f1m);
       setFc3m(f3m);
       setLcrForecast(lcrFc);
-      setCurrentValues(extractValues(lmgData));
+      setIrrbbData(newIrrbb);
+      setCurrentValues(extractValues(lmgData, newIrrbb));
       setReportDate(newDate);
       setPrevDate(prevDateStr);
       setSourceFilename(res.sourceFilename);
@@ -292,8 +315,12 @@ export function DashboardView({ view, externalRunId, onNavigate }: Props) {
 
       if (prevRunId) {
         try {
-          const prevLmg = await fetchLmgSummary(prevRunId);
-          setPreviousValues(extractValues(prevLmg));
+          const [prevLmg, prevIrrbbRes] = await Promise.all([
+            fetchLmgSummary(prevRunId),
+            fetchIrrbb(prevRunId).catch(() => null),
+          ]);
+          const prevIrrbb = prevIrrbbRes?.irrbb ?? null;
+          setPreviousValues(extractValues(prevLmg, prevIrrbb));
         } catch { setPreviousValues(null); }
       } else {
         setPreviousValues(null);
@@ -302,7 +329,24 @@ export function DashboardView({ view, externalRunId, onNavigate }: Props) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
+      setUploadProcessing(false);
     }
+  }
+
+  // ----------------------------------------------------------
+  // Render: upload processing overlay (3D logo spinner)
+  // ----------------------------------------------------------
+
+  function renderUploadOverlay() {
+    if (!uploadProcessing) return null;
+    return (
+      <div className="upload-processing-overlay">
+        <div className="upload-processing-card">
+          <img src={nhBankLogo} className="upload-logo-spin" alt="Processing" />
+          <p className="upload-processing-text">Processing file…</p>
+        </div>
+      </div>
+    );
   }
 
   // ----------------------------------------------------------
@@ -346,11 +390,11 @@ export function DashboardView({ view, externalRunId, onNavigate }: Props) {
         </div>
         <div className="detail-metric">
           <span className="detail-metric-label">Trigger</span>
-          <span className="detail-metric-value mono">{item.triggerDisplay}</span>
+          <span className="detail-metric-value mono" style={{ color: 'var(--color-trigger)' }}>{item.triggerDisplay}</span>
         </div>
         <div className="detail-metric">
           <span className="detail-metric-label">Limit</span>
-          <span className="detail-metric-value mono">{item.limitDisplay}</span>
+          <span className="detail-metric-value mono" style={{ color: 'var(--color-limit)' }}>{item.limitDisplay}</span>
         </div>
         <div className="detail-metric">
           <span className="detail-metric-label">Breach</span>
@@ -367,7 +411,10 @@ export function DashboardView({ view, externalRunId, onNavigate }: Props) {
   function renderForecastTable(title: string, data: ForecastResponse) {
     return (
       <ExpandableCard key={title}>
-        <h2 className="verify-step-title" style={{ marginBottom: '0.75rem' }}>{title}</h2>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '0.75rem' }}>
+          <h2 className="verify-step-title">{title}</h2>
+          <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>Unit: AUD</span>
+        </div>
         <div style={{ overflowX: 'auto' }}>
           <table className="data-table">
             <thead><tr><th></th>{data.months.map((m) => <th key={m.from} className="text-right" style={{ minWidth: '100px' }}>{m.label}</th>)}</tr></thead>
@@ -379,7 +426,7 @@ export function DashboardView({ view, externalRunId, onNavigate }: Props) {
               <tr style={{ borderTop: '2px solid var(--color-border)' }}><td style={{ fontWeight: 700 }}>Gap</td>{data.months.map((m) => <td key={m.from} className="text-right mono" style={{ fontWeight: 700 }}>{m.gap.toLocaleString()}</td>)}</tr>
               <tr><td>Total Asset</td>{data.months.map((m) => <td key={m.from} className="text-right mono">{m.totalAsset.toLocaleString()}</td>)}</tr>
               <tr style={{ borderTop: '2px solid var(--color-border)' }}><td style={{ fontWeight: 700 }}>Gap Ratio</td>{data.months.map((m) => <td key={m.from} className="text-right mono" style={{ fontWeight: 700, fontSize: '1rem', color: m.gapRatio !== null && m.gapRatio < m.trigger ? 'var(--color-error)' : 'var(--color-success)' }}>{fmtPct(m.gapRatio)}</td>)}</tr>
-              <tr><td style={{ color: '#FF0000', fontWeight: 700 }}>Trigger</td>{data.months.map((m) => <td key={m.from} className="text-right mono" style={{ color: '#FF0000', fontWeight: 700 }}>{Math.round(m.trigger * 100)}%</td>)}</tr>
+              <tr><td style={{ fontWeight: 700 }}>Trigger</td>{data.months.map((m) => <td key={m.from} className="text-right mono" style={{ color: 'var(--color-trigger)', fontWeight: 700 }}>{Math.round(m.trigger * 100)}%</td>)}</tr>
               <tr><td>(-) Shortfall</td>{data.months.map((m) => <td key={m.from} className="text-right mono">{m.shortfall.toLocaleString()}</td>)}</tr>
             </tbody>
           </table>
@@ -404,8 +451,8 @@ export function DashboardView({ view, externalRunId, onNavigate }: Props) {
           <span className="summary-item-chevron">{'\u203A'}</span>
           <span className="summary-item-label" style={{ whiteSpace: 'pre-line' }}>{item.label}</span>
         </td>
-        <td className="text-right mono summary-trigger-limit">{item.triggerDisplay}</td>
-        <td className="text-right mono summary-trigger-limit">{item.limitDisplay}</td>
+        <td className="text-right mono summary-trigger-val">{item.triggerDisplay}</td>
+        <td className="text-right mono summary-limit-val">{item.limitDisplay}</td>
         <td className="text-right mono summary-num-prev">{fmtVal(prev)}</td>
         <td className="text-right mono summary-num-current current-day-col">
           {fmtVal(curr)}
@@ -429,9 +476,40 @@ export function DashboardView({ view, externalRunId, onNavigate }: Props) {
 
     return (
       <div className="card">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
           <h2 className="verify-step-title">Regulatory Indicators</h2>
           <span style={{ fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>(Unit: %, %p)</span>
+        </div>
+
+        {/* KPI metric cards */}
+        <div className="kpi-grid">
+          {ITEMS.map((item) => {
+            const curr = currentValues![item.key];
+            const prev = previousValues?.[item.key] ?? null;
+            const breach = checkBreach(curr, item);
+            const diff = curr !== null && prev !== null ? curr - prev : null;
+            return (
+              <div
+                key={item.key}
+                className={`kpi-card${breach === 'Crisis' ? ' kpi-card--crisis' : breach === 'Y' ? ' kpi-card--y' : ''}`}
+                onClick={() => setPopupItem(item.key)}
+              >
+                <div className="kpi-card__label">{item.label.replace('\n', ' ')}</div>
+                <div className={`kpi-card__value kpi-card__value--${breach.toLowerCase()}`}>
+                  {curr !== null ? curr.toFixed(2) : '—'}
+                  {curr !== null && <span style={{ fontSize: '1rem', fontWeight: 700, marginLeft: '3px' }}>%</span>}
+                </div>
+                <div className="kpi-card__footer">
+                  <span className={`breach-badge breach-badge--${breach.toLowerCase()}`}>{breach}</span>
+                  {diff !== null && (
+                    <span className="kpi-card__change" style={{ color: changeColor(diff, item.direction) ?? 'var(--color-text-muted)' }}>
+                      {diff > 0 ? '+' : ''}{diff.toFixed(2)} %p
+                    </span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
 
         <div className="table-wrapper">
@@ -542,8 +620,14 @@ export function DashboardView({ view, externalRunId, onNavigate }: Props) {
           )}
 
           <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={lcrChartData} margin={{ top: 10, right: 110, bottom: 5, left: 10 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
+            <AreaChart data={lcrChartData} margin={{ top: 10, right: 110, bottom: 5, left: 10 }}>
+              <defs>
+                <linearGradient id="lcrActualGradient" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%"  stopColor="#2563eb" stopOpacity={0.18} />
+                  <stop offset="95%" stopColor="#2563eb" stopOpacity={0.01} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" strokeOpacity={0.55} />
               <XAxis
                 dataKey="date"
                 tick={{ fontSize: 10, fill: 'var(--color-text-muted)' }}
@@ -558,28 +642,30 @@ export function DashboardView({ view, externalRunId, onNavigate }: Props) {
                 tickFormatter={(v: number) => `${v}%`}
               />
               <Tooltip
-                contentStyle={{ fontSize: '0.85rem', borderRadius: '6px', border: '1px solid var(--color-border)', boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}
+                cursor={{ stroke: 'var(--color-primary)', strokeWidth: 1, strokeDasharray: '4 2', opacity: 0.5 }}
+                contentStyle={{ fontSize: '0.85rem', borderRadius: '8px', border: '1px solid var(--color-border)', boxShadow: '0 4px 16px rgba(0,0,0,0.10)', padding: '0.5rem 0.75rem' }}
                 formatter={(value: any) => [`${Number(value).toFixed(2)}%`, 'LCR']}
                 labelFormatter={(label: any) => `Date: ${label}`}
               />
               <ReferenceLine y={LCR_TRIGGER} stroke="#f59e0b" strokeDasharray="6 3" strokeWidth={1.5} label={{ value: `Trigger ${LCR_TRIGGER}%`, position: 'right', fill: '#f59e0b', fontSize: 11, fontWeight: 600 }} />
               <ReferenceLine y={LCR_LIMIT}   stroke="#dc2626" strokeDasharray="6 3" strokeWidth={1.5} label={{ value: `Limit ${LCR_LIMIT}%`,     position: 'right', fill: '#dc2626', fontSize: 11, fontWeight: 600 }} />
-              <Line
+              <Area
                 type="monotone"
                 dataKey="lcr"
                 stroke="var(--color-primary)"
                 strokeWidth={2.5}
+                fill="url(#lcrActualGradient)"
                 dot={renderDot}
                 activeDot={{ r: 7, stroke: 'var(--color-primary)', strokeWidth: 2, fill: '#fff' }}
               />
-            </LineChart>
+            </AreaChart>
           </ResponsiveContainer>
 
           {/* Legend */}
           <div style={{ display: 'flex', gap: '1rem', marginTop: '0.5rem', fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
             <span><span style={{ display: 'inline-block', width: 12, height: 3, background: 'var(--color-primary)', marginRight: 4, verticalAlign: 'middle' }} />Normal</span>
-            <span><span style={{ display: 'inline-block', width: 12, height: 3, background: '#f59e0b', marginRight: 4, verticalAlign: 'middle' }} />Trigger (&le;{LCR_TRIGGER}%)</span>
-            <span><span style={{ display: 'inline-block', width: 12, height: 3, background: '#dc2626', marginRight: 4, verticalAlign: 'middle' }} />Limit (&le;{LCR_LIMIT}%)</span>
+            <span><span style={{ display: 'inline-block', width: 12, height: 3, background: 'var(--color-trigger)', marginRight: 4, verticalAlign: 'middle' }} />Trigger (&le;{LCR_TRIGGER}%)</span>
+            <span><span style={{ display: 'inline-block', width: 12, height: 3, background: 'var(--color-limit)', marginRight: 4, verticalAlign: 'middle' }} />Limit (&le;{LCR_LIMIT}%)</span>
           </div>
         </div>
 
@@ -621,20 +707,14 @@ export function DashboardView({ view, externalRunId, onNavigate }: Props) {
     const yMin = Math.floor(Math.min(...allVals) / 5) * 5 - 5;
     const yMax = Math.ceil(Math.max(...allVals) / 10) * 10 + 10;
 
-    const renderDotFc = (props: any) => {
-      const { cx, cy, payload } = props;
-      if (cx == null || cy == null || payload.lcr == null) return null;
-      const v = payload.lcr;
-      let fill = 'var(--color-primary)';
-      if (v <= LCR_TRIGGER) fill = '#f59e0b';
-      return <Dot cx={cx} cy={cy} r={5} fill={fill} stroke="#fff" strokeWidth={1.5} />;
-    };
-
     const lowestColor = fcLowest && fcLowest.lcr !== null
       ? fcLowest.lcr <= LCR_TRIGGER ? '#f59e0b' : 'var(--color-primary)'
       : 'var(--color-text)';
 
     const chartHeight = isPopup ? 400 : 300;
+
+    // With ~240 daily points show only monthly X-axis ticks
+    const xTickInterval = Math.max(1, Math.floor(data.length / 8) - 1);
 
     const chartContent = (
       <>
@@ -659,18 +739,44 @@ export function DashboardView({ view, externalRunId, onNavigate }: Props) {
         </div>
 
         <ResponsiveContainer width="100%" height={chartHeight}>
-          <LineChart data={data} margin={{ top: 10, right: 100, bottom: 5, left: 10 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
-            <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'var(--color-text-muted)' }} tickLine={false} axisLine={{ stroke: 'var(--color-border)' }} />
+          <AreaChart data={data} margin={{ top: 10, right: 100, bottom: 5, left: 10 }}>
+            <defs>
+              <linearGradient id="lcrFcGradient" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%"  stopColor="#2563eb" stopOpacity={0.15} />
+                <stop offset="95%" stopColor="#2563eb" stopOpacity={0.01} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" strokeOpacity={0.55} />
+            <XAxis
+              dataKey="date"
+              tick={{ fontSize: 10, fill: 'var(--color-text-muted)' }}
+              tickLine={false}
+              axisLine={{ stroke: 'var(--color-border)' }}
+              interval={xTickInterval}
+              tickFormatter={(dateStr: string) => {
+                const d = new Date(dateStr + 'T12:00:00Z');
+                return d.toLocaleString('en-US', { month: 'short', year: '2-digit', timeZone: 'UTC' });
+              }}
+            />
             <YAxis domain={[yMin, yMax]} tick={{ fontSize: 10, fill: 'var(--color-text-muted)' }} tickLine={false} axisLine={{ stroke: 'var(--color-border)' }} tickFormatter={(v: number) => `${v}%`} />
             <Tooltip
-              contentStyle={{ fontSize: '0.85rem', borderRadius: '6px', border: '1px solid var(--color-border)', boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}
+              cursor={{ stroke: 'var(--color-primary)', strokeWidth: 1, strokeDasharray: '4 2', opacity: 0.5 }}
+              contentStyle={{ fontSize: '0.85rem', borderRadius: '8px', border: '1px solid var(--color-border)', boxShadow: '0 4px 16px rgba(0,0,0,0.10)', padding: '0.5rem 0.75rem' }}
               formatter={(value: any) => [value != null ? `${Number(value).toFixed(2)}%` : 'N/A', 'Forecast LCR']}
               labelFormatter={(_: any, payload: any) => payload?.[0]?.payload?.date ? `Date: ${payload[0].payload.date}` : ''}
             />
             <ReferenceLine y={LCR_TRIGGER} stroke="#f59e0b" strokeDasharray="6 3" strokeWidth={1.5} label={{ value: `Trigger ${LCR_TRIGGER}%`, position: 'right', fill: '#f59e0b', fontSize: 11, fontWeight: 600 }} />
-            <Line type="monotone" dataKey="lcr" stroke="var(--color-primary)" strokeWidth={2.5} dot={renderDotFc} activeDot={{ r: 7, stroke: 'var(--color-primary)', strokeWidth: 2, fill: '#fff' }} connectNulls />
-          </LineChart>
+            <Area
+              type="monotone"
+              dataKey="lcr"
+              stroke="var(--color-primary)"
+              strokeWidth={2}
+              fill="url(#lcrFcGradient)"
+              dot={false}
+              activeDot={{ r: 7, stroke: 'var(--color-primary)', strokeWidth: 2, fill: '#fff' }}
+              connectNulls
+            />
+          </AreaChart>
         </ResponsiveContainer>
       </>
     );
@@ -714,15 +820,21 @@ export function DashboardView({ view, externalRunId, onNavigate }: Props) {
               <>
                 <h2 className="verify-step-title" style={{ marginBottom: '1rem' }}>LCR Trend (Actual)</h2>
                 <ResponsiveContainer width="100%" height={450}>
-                  <LineChart data={lcrChartData} margin={{ top: 10, right: 110, bottom: 5, left: 10 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
+                  <AreaChart data={lcrChartData} margin={{ top: 10, right: 110, bottom: 5, left: 10 }}>
+                    <defs>
+                      <linearGradient id="lcrPopupGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%"  stopColor="#2563eb" stopOpacity={0.18} />
+                        <stop offset="95%" stopColor="#2563eb" stopOpacity={0.01} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" strokeOpacity={0.55} />
                     <XAxis dataKey="date" tick={{ fontSize: 11, fill: 'var(--color-text-muted)' }} tickLine={false} axisLine={{ stroke: 'var(--color-border)' }} />
                     <YAxis domain={[yMinP, yMaxP]} tick={{ fontSize: 11, fill: 'var(--color-text-muted)' }} tickLine={false} axisLine={{ stroke: 'var(--color-border)' }} tickFormatter={(v: number) => `${v}%`} />
-                    <Tooltip contentStyle={{ fontSize: '0.85rem', borderRadius: '6px', border: '1px solid var(--color-border)' }} formatter={(value: any) => [`${Number(value).toFixed(2)}%`, 'LCR']} labelFormatter={(label: any) => `Date: ${label}`} />
+                    <Tooltip cursor={{ stroke: 'var(--color-primary)', strokeWidth: 1, strokeDasharray: '4 2', opacity: 0.5 }} contentStyle={{ fontSize: '0.85rem', borderRadius: '8px', border: '1px solid var(--color-border)', boxShadow: '0 4px 16px rgba(0,0,0,0.10)', padding: '0.5rem 0.75rem' }} formatter={(value: any) => [`${Number(value).toFixed(2)}%`, 'LCR']} labelFormatter={(label: any) => `Date: ${label}`} />
                     <ReferenceLine y={LCR_TRIGGER} stroke="#f59e0b" strokeDasharray="6 3" strokeWidth={1.5} label={{ value: `Trigger ${LCR_TRIGGER}%`, position: 'right', fill: '#f59e0b', fontSize: 11, fontWeight: 600 }} />
                     <ReferenceLine y={LCR_LIMIT} stroke="#dc2626" strokeDasharray="6 3" strokeWidth={1.5} label={{ value: `Limit ${LCR_LIMIT}%`, position: 'right', fill: '#dc2626', fontSize: 11, fontWeight: 600 }} />
-                    <Line type="monotone" dataKey="lcr" stroke="var(--color-primary)" strokeWidth={2.5} dot={renderDotP} activeDot={{ r: 7, stroke: 'var(--color-primary)', strokeWidth: 2, fill: '#fff' }} />
-                  </LineChart>
+                    <Area type="monotone" dataKey="lcr" stroke="var(--color-primary)" strokeWidth={2.5} fill="url(#lcrPopupGradient)" dot={renderDotP} activeDot={{ r: 7, stroke: 'var(--color-primary)', strokeWidth: 2, fill: '#fff' }} />
+                  </AreaChart>
                 </ResponsiveContainer>
               </>
             );
@@ -743,46 +855,97 @@ export function DashboardView({ view, externalRunId, onNavigate }: Props) {
     if (!lcrForecast?.forecast.length) return null;
     const fc = lcrForecast.forecast;
 
-    // Date search takes priority over pagination
-    const isSearching = forecastDateFilter.length > 0;
-    const filtered = isSearching
-      ? fc.filter((m) => m.date.includes(forecastDateFilter))
-      : [fc[fcPage]].filter(Boolean); // show 1 month per page
+    // Group daily rows by YYYY-MM for month pagination
+    const monthGroupMap = new Map<string, typeof fc>();
+    for (const row of fc) {
+      const mk = row.date.substring(0, 7);
+      const arr = monthGroupMap.get(mk) ?? [];
+      arr.push(row);
+      monthGroupMap.set(mk, arr);
+    }
+    const monthKeys = Array.from(monthGroupMap.keys()).sort();
+    const totalPages = monthKeys.length;
 
-    const currentMonth = fc[fcPage];
-    const totalPages = fc.length; // 8 pages (1 per month)
+    // Date range filter
+    // - Both From and To set  → inclusive range [from, to]
+    // - Only From set         → exact single-date match
+    // - Only To set           → all rows up to and including To
+    // - Neither set           → paginated month view (no filter)
+    const isFiltering = fcDateFrom !== '' || fcDateTo !== '';
+    let filtered: typeof fc;
+    if (!isFiltering) {
+      filtered = monthGroupMap.get(monthKeys[Math.min(fcPage, totalPages - 1)]) ?? [];
+    } else if (fcDateFrom && fcDateTo) {
+      filtered = fc.filter((m) => m.date >= fcDateFrom && m.date <= fcDateTo);
+    } else if (fcDateFrom) {
+      // Single date: exact match
+      filtered = fc.filter((m) => m.date === fcDateFrom);
+    } else {
+      // Only To: up to that date
+      filtered = fc.filter((m) => m.date <= fcDateTo);
+    }
+
+    // Month button labels (use first row's label for each month)
+    const monthLabels = monthKeys.map((mk) => monthGroupMap.get(mk)![0].label);
+    const safePage = Math.min(fcPage, totalPages - 1);
+
+    // Human-readable filter description for empty-state message
+    const filterDesc = fcDateFrom && fcDateTo
+      ? `${fcDateFrom} – ${fcDateTo}`
+      : fcDateFrom
+        ? fcDateFrom
+        : fcDateTo
+          ? `up to ${fcDateTo}`
+          : '';
 
     return (
       <div className="card">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
           <h2 className="verify-step-title" style={{ margin: 0 }}>8-Month LCR Forecast</h2>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+
+          {/* Date range filter */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <label style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>From</label>
             <input
-              type="text"
-              placeholder="Search by date..."
-              value={forecastDateFilter}
-              onChange={(e) => { setForecastDateFilter(e.target.value); setFcPage(0); }}
-              style={{ padding: '0.35rem 0.6rem', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '0.82rem', fontFamily: 'var(--font-mono)', width: '160px' }}
+              type="date"
+              value={fcDateFrom}
+              onChange={(e) => { setFcDateFrom(e.target.value); setFcPage(0); }}
+              style={{ padding: '0.3rem 0.5rem', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '0.82rem', fontFamily: 'var(--font-mono)' }}
             />
-            {forecastDateFilter && <button className="btn btn--ghost" style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }} onClick={() => setForecastDateFilter('')}>Clear</button>}
+            <label style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>To</label>
+            <input
+              type="date"
+              value={fcDateTo}
+              onChange={(e) => { setFcDateTo(e.target.value); setFcPage(0); }}
+              style={{ padding: '0.3rem 0.5rem', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '0.82rem', fontFamily: 'var(--font-mono)' }}
+            />
+            {isFiltering && (
+              <button
+                className="btn btn--ghost"
+                style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
+                onClick={() => { setFcDateFrom(''); setFcDateTo(''); setFcPage(0); }}
+              >
+                Clear
+              </button>
+            )}
           </div>
         </div>
 
-        {/* Month pagination (hidden when searching) */}
-        {!isSearching && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem', fontSize: '0.82rem' }}>
-            <button className="btn btn--ghost" style={{ padding: '0.25rem 0.6rem', fontSize: '0.78rem' }} disabled={fcPage === 0} onClick={() => setFcPage(fcPage - 1)}>&laquo; Prev</button>
-            {fc.map((m, i) => (
+        {/* Month pagination (hidden when a date filter is active) */}
+        {!isFiltering && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginBottom: '0.75rem', fontSize: '0.82rem', flexWrap: 'wrap' }}>
+            <button className="btn btn--ghost" style={{ padding: '0.25rem 0.6rem', fontSize: '0.78rem' }} disabled={safePage === 0} onClick={() => setFcPage(safePage - 1)}>&laquo; Prev</button>
+            {monthKeys.map((mk, i) => (
               <button
-                key={m.date}
-                className={`btn ${fcPage === i ? 'btn--primary' : 'btn--ghost'}`}
-                style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem', minWidth: '28px' }}
+                key={mk}
+                className={`btn ${safePage === i ? 'btn--primary' : 'btn--ghost'}`}
+                style={{ padding: '0.25rem 0.45rem', fontSize: '0.72rem', minWidth: '52px' }}
                 onClick={() => setFcPage(i)}
               >
-                {m.label}
+                {monthLabels[i]}
               </button>
             ))}
-            <button className="btn btn--ghost" style={{ padding: '0.25rem 0.6rem', fontSize: '0.78rem' }} disabled={fcPage >= totalPages - 1} onClick={() => setFcPage(fcPage + 1)}>Next &raquo;</button>
+            <button className="btn btn--ghost" style={{ padding: '0.25rem 0.6rem', fontSize: '0.78rem' }} disabled={safePage >= totalPages - 1} onClick={() => setFcPage(safePage + 1)}>Next &raquo;</button>
           </div>
         )}
 
@@ -813,17 +976,22 @@ export function DashboardView({ view, externalRunId, onNavigate }: Props) {
                 );
               })}
               {filtered.length === 0 && (
-                <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--color-text-muted)', padding: '1rem' }}>No results for &ldquo;{forecastDateFilter}&rdquo;</td></tr>
+                <tr>
+                  <td colSpan={5} style={{ textAlign: 'center', color: 'var(--color-text-muted)', padding: '1rem' }}>
+                    No forecast rows found{filterDesc ? ` for ${filterDesc}` : ''}.
+                  </td>
+                </tr>
               )}
             </tbody>
           </table>
         </div>
 
-        {!isSearching && currentMonth && (
-          <div style={{ textAlign: 'center', marginTop: '0.5rem', fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
-            Month {fcPage + 1} of {totalPages} &mdash; Window: {currentMonth.date} (+30 days)
-          </div>
-        )}
+        {/* Footer: pagination info when not filtering; match count when filtering */}
+        <div style={{ textAlign: 'center', marginTop: '0.5rem', fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
+          {isFiltering
+            ? `${filtered.length} row${filtered.length !== 1 ? 's' : ''} matched`
+            : `${monthLabels[safePage]} — ${filtered.length} day${filtered.length !== 1 ? 's' : ''} — Page ${safePage + 1} of ${totalPages}`}
+        </div>
       </div>
     );
   }
@@ -833,51 +1001,12 @@ export function DashboardView({ view, externalRunId, onNavigate }: Props) {
   // ----------------------------------------------------------
 
   function renderLcrDetail() {
-    const item = ITEMS.find((i) => i.key === 'lcr')!;
-    const curr = currentValues?.[item.key] ?? null;
-    const prev = previousValues?.[item.key] ?? null;
-    const breach = checkBreach(curr, item);
-
     return (
       <>
         {renderLcrTrendChart()}
-
-        {/* LCR Detail — single row inline */}
-        <div className="card" style={{ marginBottom: '1.25rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
-            <h2 className="verify-step-title" style={{ margin: 0 }}>LCR Detail</h2>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', flexWrap: 'wrap' }}>
-              <div style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>Today{reportDate ? ` (${reportDate})` : ''}</div>
-                <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--color-primary)' }}>{fmtVal(curr)}</div>
-              </div>
-              <div style={{ width: 1, height: 36, background: 'var(--color-border)' }} />
-              <div style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>Previous{prevDate ? ` (${prevDate})` : ''}</div>
-                <div style={{ fontSize: '1.1rem', fontWeight: 700 }}>{fmtVal(prev)}</div>
-              </div>
-              <div style={{ width: 1, height: 36, background: 'var(--color-border)' }} />
-              <div style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>Trigger</div>
-                <div className="mono" style={{ fontSize: '1rem', fontWeight: 700, color: '#dc2626' }}>{item.triggerDisplay}</div>
-              </div>
-              <div style={{ width: 1, height: 36, background: 'var(--color-border)' }} />
-              <div style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>Limit</div>
-                <div className="mono" style={{ fontSize: '1rem', fontWeight: 700, color: '#dc2626' }}>{item.limitDisplay}</div>
-              </div>
-              <div style={{ width: 1, height: 36, background: 'var(--color-border)' }} />
-              <div style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>Breach</div>
-                <span className={`breach-badge breach-badge--${breach.toLowerCase()}`}>{breach}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
+        {/* LCR Detail metrics are now in the Report Date strip above */}
         {/* 8-Month Forecast Table */}
         {renderLcrForecastTable()}
-
         {/* Chart enlarged popup */}
         {renderChartPopup()}
       </>
@@ -909,14 +1038,18 @@ export function DashboardView({ view, externalRunId, onNavigate }: Props) {
     );
   }
 
+  function renderIrrbbTable(data: IrrbbData | null) {
+    return <IrrbbTable data={data} />;
+  }
+
   function render12mDetail() {
     const item = ITEMS.find((i) => i.key === '12m_ir')!;
     return (
       <div className="card">
         <h2 className="verify-step-title" style={{ marginBottom: '1rem' }}>12M Interest Rate Sensitive Gap Ratio</h2>
         {renderMetricCard(item)}
-        <div style={{ marginTop: '1.5rem', padding: '2rem', textAlign: 'center', color: 'var(--color-text-muted)', background: 'var(--color-bg)', borderRadius: 'var(--radius, 6px)' }}>
-          <p style={{ fontSize: '0.9rem' }}>Calculation formula will be provided in a future update.</p>
+        <div style={{ marginTop: '1.5rem' }}>
+          {renderIrrbbTable(irrbbData)}
         </div>
       </div>
     );
@@ -935,7 +1068,7 @@ export function DashboardView({ view, externalRunId, onNavigate }: Props) {
               <thead><tr><th>Period</th><th className="text-right">Trigger</th><th className="text-right">Limit</th>{thTwoLine('Previous Day', prevDate)}{thTwoLine('Current Day', reportDate)}<th className="text-right">Daily Change</th><th style={{ textAlign: 'center' }}>Breach</th></tr></thead>
               <tbody>
                 {GAP_ITEMS.map((item) => { const curr = currentValues![item.key]; const prev = previousValues?.[item.key] ?? null; const breach = checkBreach(curr, item); const diff = curr !== null && prev !== null ? curr - prev : null; return (
-                  <tr key={item.key}><td style={{ fontWeight: 600 }}>{item.label}</td><td className="text-right mono">{item.triggerDisplay}</td><td className="text-right mono">{item.limitDisplay}</td><td className="text-right mono" style={{ fontWeight: 600 }}>{fmtVal(prev)}</td><td className="text-right mono" style={{ fontWeight: 700 }}>{fmtVal(curr)}</td><td className="text-right mono" style={{ fontWeight: 600, color: changeColor(diff, item.direction) }}>{fmtChange(curr, prev)}</td><td style={{ textAlign: 'center' }}><span className={`breach-badge breach-badge--${breach.toLowerCase()}`}>{breach}</span></td></tr>
+                  <tr key={item.key}><td style={{ fontWeight: 600 }}>{item.label}</td><td className="text-right mono" style={{ color: 'var(--color-trigger)', fontWeight: 700 }}>{item.triggerDisplay}</td><td className="text-right mono" style={{ color: 'var(--color-limit)', fontWeight: 700 }}>{item.limitDisplay}</td><td className="text-right mono" style={{ fontWeight: 600 }}>{fmtVal(prev)}</td><td className="text-right mono" style={{ fontWeight: 700 }}>{fmtVal(curr)}</td><td className="text-right mono" style={{ fontWeight: 600, color: changeColor(diff, item.direction) }}>{fmtChange(curr, prev)}</td><td style={{ textAlign: 'center' }}><span className={`breach-badge breach-badge--${breach.toLowerCase()}`}>{breach}</span></td></tr>
                 ); })}
               </tbody>
             </table>
@@ -986,11 +1119,11 @@ export function DashboardView({ view, externalRunId, onNavigate }: Props) {
                     }}>
                       {fmtPct(row.ratio)}
                     </td>
-                    <td className="text-right mono" style={{ color: '#FF0000', fontWeight: 700 }}>{fmtPct(row.trigger)}</td>
+                    <td className="text-right mono" style={{ color: 'var(--color-trigger)', fontWeight: 700 }}>{fmtPct(row.trigger)}</td>
                     <td style={{ fontWeight: 700, textAlign: 'center', color: row.reached === 'Y' ? 'var(--color-error)' : 'var(--color-success)' }}>
                       {row.reached}
                     </td>
-                    <td className="text-right mono">{fmtPct(row.limit)}</td>
+                    <td className="text-right mono" style={{ color: 'var(--color-limit)', fontWeight: 700 }}>{fmtPct(row.limit)}</td>
                     <td style={{ fontWeight: 700, textAlign: 'center', color: row.breached === 'Y' ? 'var(--color-error)' : 'var(--color-success)' }}>
                       {row.breached}
                     </td>
@@ -1011,10 +1144,10 @@ export function DashboardView({ view, externalRunId, onNavigate }: Props) {
             </thead>
             <tbody>
               <tr>
-                <td className="text-right mono" style={{ fontWeight: 700, color: '#FF0000', fontSize: '1rem' }}>
+                <td className="text-right mono" style={{ fontWeight: 700, color: 'var(--color-error)', fontSize: '1rem' }}>
                   {lmg.lcrPercent !== null ? fmtPct(lmg.lcrPercent) : 'N/A'}
                 </td>
-                <td className="text-right mono" style={{ fontWeight: 700, color: '#FF0000', fontSize: '1rem' }}>
+                <td className="text-right mono" style={{ fontWeight: 700, color: 'var(--color-error)', fontSize: '1rem' }}>
                   {fmtPct(lmg.ratio3MLR)}
                 </td>
               </tr>
@@ -1031,6 +1164,10 @@ export function DashboardView({ view, externalRunId, onNavigate }: Props) {
    */
   function renderPopupForecastTable(data: ForecastResponse) {
     return (
+      <>
+        <div style={{ textAlign: 'right', fontSize: '0.78rem', color: 'var(--color-text-muted)', marginBottom: '0.35rem' }}>
+          Unit: AUD
+        </div>
       <div style={{ overflowX: 'auto' }}>
         <table className="data-table">
           <thead>
@@ -1090,9 +1227,9 @@ export function DashboardView({ view, externalRunId, onNavigate }: Props) {
               ))}
             </tr>
             <tr>
-              <td style={{ color: '#FF0000', fontWeight: 700 }}>Trigger</td>
+              <td style={{ fontWeight: 700 }}>Trigger</td>
               {data.months.map((m) => (
-                <td key={m.from} className="text-right mono" style={{ color: '#FF0000', fontWeight: 700 }}>{Math.round(m.trigger * 100)}%</td>
+                <td key={m.from} className="text-right mono" style={{ color: 'var(--color-trigger)', fontWeight: 700 }}>{Math.round(m.trigger * 100)}%</td>
               ))}
             </tr>
             <tr>
@@ -1104,12 +1241,14 @@ export function DashboardView({ view, externalRunId, onNavigate }: Props) {
           </tbody>
         </table>
       </div>
+      </>
     );
   }
 
   function renderPopup() {
     const item = ITEMS.find((i) => i.key === popupItem);
     if (!item || !currentValues) return null;
+    console.debug('[Dashboard] popup — key:', item.key, 'irrbbData:', irrbbData ? `ratio=${irrbbData.ratio}` : 'null');
 
     const gapFcMap: Record<string, { data: ForecastResponse | null; title: string }> = {
       '7d_gap': { data: fc7d, title: '7-Day Liquidity Gap Ratio' },
@@ -1132,12 +1271,8 @@ export function DashboardView({ view, externalRunId, onNavigate }: Props) {
           {/* LCR / 3M Liquidity → KRI Table (same as VerifyView) */}
           {isKri && renderKriTable()}
 
-          {/* 12M Interest Rate → placeholder */}
-          {item.key === '12m_ir' && (
-            <div style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--color-text-muted)', background: 'var(--color-bg)', borderRadius: 'var(--radius, 6px)' }}>
-              <p style={{ fontSize: '0.9rem' }}>Calculation formula will be provided in a future update.</p>
-            </div>
-          )}
+          {/* 12M Interest Rate → IRRBB table */}
+          {item.key === '12m_ir' && renderIrrbbTable(irrbbData)}
 
           {/* GAP → Forecast Table (same as VerifyView renderForecastTable) */}
           {isGap && gapFcMap[item.key].data && renderPopupForecastTable(gapFcMap[item.key].data!)}
@@ -1162,25 +1297,73 @@ export function DashboardView({ view, externalRunId, onNavigate }: Props) {
   // Main render
   // ----------------------------------------------------------
 
-  if (loading) return (<div className="verify-view"><div className="card" style={{ textAlign: 'center', padding: '3rem 1rem' }}><div className="spinner" /><p style={{ marginTop: '1rem', color: 'var(--color-text-muted)' }}>Loading data...</p></div></div>);
-  if (error) return (<div className="verify-view"><div className="card card--error" role="alert"><h2 className="card__title card__title--error">Error</h2><p className="error-message">{error}</p><button className="btn btn--primary" onClick={() => { setError(null); loadData(); }} style={{ marginTop: '1rem' }}>Retry</button></div></div>);
-  if (!hasData || !currentValues) return (<div className="verify-view"><div className="card" style={{ textAlign: 'center', padding: '2rem' }}><p style={{ color: 'var(--color-text-muted)', marginBottom: '1rem' }}>No reports found. Upload a file to get started.</p><UploadWithDate onUpload={handleFile} isLoading={false} /></div></div>);
+  if (loading) return (<>{renderUploadOverlay()}<div className="verify-view"><div className="card" style={{ textAlign: 'center', padding: '3rem 1rem' }}><img src={logoImg} className="upload-logo-spin" alt="Loading" style={{ width: 80, height: 80 }} /><p style={{ marginTop: '1rem', color: 'var(--color-text-muted)' }}>Loading data...</p></div></div></>);
+  if (error) return (<>{renderUploadOverlay()}<div className="verify-view"><div className="card card--error" role="alert"><h2 className="card__title card__title--error">Error</h2><p className="error-message">{error}</p><button className="btn btn--primary" onClick={() => { setError(null); loadData(); }} style={{ marginTop: '1rem' }}>Retry</button></div></div></>);
+  if (!hasData || !currentValues) return (<>{renderUploadOverlay()}<div className="verify-view"><div className="card" style={{ textAlign: 'center', padding: '2rem' }}><p style={{ color: 'var(--color-text-muted)', marginBottom: '1rem' }}>No reports found. Upload a file to get started.</p><UploadWithDate onUpload={handleFile} isLoading={false} /></div></div></>);
 
   return (
     <div className="verify-view">
+      {renderUploadOverlay()}
       <div className="card" style={{ padding: '1rem 1.25rem' }}>
         {!showUpload ? (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '2rem', flexWrap: 'wrap' }}>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem' }}>
-                <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Report Date</span>
-                <span style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--color-primary)' }}>{reportDate}</span>
+          (() => {
+            // For the LCR view, embed LCR Detail metrics directly in the strip
+            const lcrItem = ITEMS.find((i) => i.key === 'lcr')!;
+            const lcrCurr = currentValues?.['lcr'] ?? null;
+            const lcrPrev = previousValues?.['lcr'] ?? null;
+            const lcrBreach = checkBreach(lcrCurr, lcrItem);
+            return (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem' }}>
+                {/* Left: Report Date / source / upload time */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem' }}>
+                    <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Report Date</span>
+                    <span style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--color-primary)' }}>{reportDate}</span>
+                  </div>
+                  {sourceFilename && <span style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>{sourceFilename}</span>}
+                  {uploadedAt && <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>{new Date(uploadedAt).toLocaleString()}</span>}
+                </div>
+
+                {/* Right side */}
+                {view === 'lcr' && currentValues ? (
+                  /* LCR Detail metrics inline */
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+                    <div style={{ width: 1, height: 36, background: 'var(--color-border)' }} />
+                    <div style={{ textAlign: 'center' }}>
+                      <div style={{ fontSize: '0.68rem', fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                        Today{reportDate ? ` (${reportDate})` : ''}
+                      </div>
+                      <div style={{ fontSize: '1.3rem', fontWeight: 800, color: 'var(--color-primary)', lineHeight: 1.1 }}>{fmtVal(lcrCurr)}<span style={{ fontSize: '0.75rem', fontWeight: 600, marginLeft: '2px' }}>%</span></div>
+                    </div>
+                    <div style={{ width: 1, height: 36, background: 'var(--color-border)' }} />
+                    <div style={{ textAlign: 'center' }}>
+                      <div style={{ fontSize: '0.68rem', fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                        Prev{prevDate ? ` (${prevDate})` : ''}
+                      </div>
+                      <div style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--color-text)' }}>{fmtVal(lcrPrev)}{lcrPrev !== null && <span style={{ fontSize: '0.7rem', marginLeft: '2px' }}>%</span>}</div>
+                    </div>
+                    <div style={{ width: 1, height: 36, background: 'var(--color-border)' }} />
+                    <div style={{ textAlign: 'center' }}>
+                      <div style={{ fontSize: '0.68rem', fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Trigger</div>
+                      <div className="mono" style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--color-trigger)' }}>{lcrItem.triggerDisplay}</div>
+                    </div>
+                    <div style={{ width: 1, height: 36, background: 'var(--color-border)' }} />
+                    <div style={{ textAlign: 'center' }}>
+                      <div style={{ fontSize: '0.68rem', fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Limit</div>
+                      <div className="mono" style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--color-limit)' }}>{lcrItem.limitDisplay}</div>
+                    </div>
+                    <div style={{ width: 1, height: 36, background: 'var(--color-border)' }} />
+                    <div style={{ textAlign: 'center' }}>
+                      <div style={{ fontSize: '0.68rem', fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Breach</div>
+                      <span className={`breach-badge breach-badge--${lcrBreach.toLowerCase()}`}>{lcrBreach}</span>
+                    </div>
+                  </div>
+                ) : view === 'dashboard' ? (
+                  <button className="btn btn--primary" style={{ whiteSpace: 'nowrap', padding: '0.5rem 1.25rem', fontSize: '0.9rem' }} onClick={() => setShowUpload(true)}>Upload New File</button>
+                ) : null}
               </div>
-              {sourceFilename && <span style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>{sourceFilename}</span>}
-              {uploadedAt && <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>{new Date(uploadedAt).toLocaleString()}</span>}
-            </div>
-            {view === 'dashboard' && <button className="btn btn--primary" style={{ whiteSpace: 'nowrap', padding: '0.5rem 1.25rem', fontSize: '0.9rem' }} onClick={() => setShowUpload(true)}>Upload New File</button>}
-          </div>
+            );
+          })()
         ) : (
           <div>
             <UploadWithDate onUpload={handleFile} isLoading={false} />

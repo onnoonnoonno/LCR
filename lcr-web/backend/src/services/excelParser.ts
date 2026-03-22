@@ -198,3 +198,46 @@ export function parseExcelBuffer(buffer: Buffer): ParseResult {
 
   return { rows, totalDataRows: rows.length };
 }
+
+// ---------------------------------------------------------------------------
+// IRRBB extraction
+// ---------------------------------------------------------------------------
+
+export interface IrrbbTableRow {
+  label: string;
+  value: number | null;
+  isPercent: boolean;
+}
+
+export interface IrrbbData {
+  ratio: number | null;
+  table: IrrbbTableRow[];
+}
+
+/**
+ * Reads the Summary_IRRBB sheet from an xlsx buffer.
+ * Returns null if the sheet is not found.
+ *
+ * Cells read:
+ *   O26:P30  — label (O) and value (P) for the 5-row summary table
+ *   P30      — 12M Interest Rate Sensitive Gap Ratio (used as the indicator value)
+ *
+ * P26–P29 are numeric; P30 is a ratio (percentage).
+ */
+export function extractIrrbbData(buffer: Buffer): IrrbbData | null {
+  const workbook = XLSX.read(buffer, { type: 'buffer', cellNF: true });
+  const ws = workbook.Sheets['Summary_IRRBB'];
+  if (!ws) return null;
+
+  const table: IrrbbTableRow[] = [];
+  for (let row = 26; row <= 30; row++) {
+    const oCell = ws[`O${row}`];
+    const pCell = ws[`P${row}`];
+    const label = oCell?.v != null ? String(oCell.v) : `Row ${row}`;
+    const value = pCell?.v != null && typeof pCell.v === 'number' ? pCell.v : null;
+    table.push({ label, value, isPercent: row === 30 });
+  }
+
+  const ratio = table[4]?.value ?? null; // P30
+  return { ratio, table };
+}

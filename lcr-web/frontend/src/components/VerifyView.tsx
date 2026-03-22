@@ -253,7 +253,7 @@ export function VerifyView({ externalRunId }: VerifyViewProps) {
                         }}>
                           {fmtPct(row.ratio)}
                         </td>
-                        <td className="text-right mono" style={{ color: '#FF0000', fontWeight: 700 }}>{fmtPct(row.trigger)}</td>
+                        <td className="text-right mono" style={{ color: 'var(--color-trigger)', fontWeight: 700 }}>{fmtPct(row.trigger)}</td>
                         <td style={{ fontWeight: 700, textAlign: 'center', color: row.reached === 'Y' ? 'var(--color-error)' : 'var(--color-success)' }}>
                           {row.reached}
                         </td>
@@ -278,10 +278,10 @@ export function VerifyView({ externalRunId }: VerifyViewProps) {
                 </thead>
                 <tbody>
                   <tr>
-                    <td className="text-right mono" style={{ fontWeight: 700, color: '#FF0000', fontSize: '1rem' }}>
+                    <td className="text-right mono" style={{ fontWeight: 700, color: 'var(--color-error)', fontSize: '1rem' }}>
                       {state.lmg.lcrPercent !== null ? fmtPct(state.lmg.lcrPercent) : 'N/A'}
                     </td>
-                    <td className="text-right mono" style={{ fontWeight: 700, color: '#FF0000', fontSize: '1rem' }}>
+                    <td className="text-right mono" style={{ fontWeight: 700, color: 'var(--color-error)', fontSize: '1rem' }}>
                       {fmtPct(state.lmg.ratio3MLR)}
                     </td>
                   </tr>
@@ -368,9 +368,9 @@ function renderForecastTable(title: string, data: ForecastResponse) {
               ))}
             </tr>
             <tr>
-              <td style={{ color: '#FF0000', fontWeight: 700 }}>Trigger</td>
+              <td style={{ fontWeight: 700 }}>Trigger</td>
               {data.months.map((m) => (
-                <td key={m.from} className="text-right mono" style={{ color: '#FF0000', fontWeight: 700 }}>{Math.round(m.trigger * 100)}%</td>
+                <td key={m.from} className="text-right mono" style={{ color: 'var(--color-trigger)', fontWeight: 700 }}>{Math.round(m.trigger * 100)}%</td>
               ))}
             </tr>
             <tr>

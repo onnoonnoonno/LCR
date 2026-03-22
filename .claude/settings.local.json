@@ -11,7 +11,11 @@
       "Bash(npx ts-node -e \":*)",
       "Read(//usr/local/**)",
       "Read(//usr/**)",
-      "Bash(command -v node)"
+      "Bash(command -v node)",
+      "Bash(find /c/Users/61478/LCR -name *.xlsx)",
+      "Bash(head -20 grep -n \"irrbb\\\\|IRRBB\\\\|ir_ratio\" /c/Users/61478/LCR/lcr-web/frontend/src/services/api.ts)",
+      "Bash(find C:Users61478 -name *.xlsx -not -path */node_modules/*)",
+      "Bash(node validate-irrbb.mjs)"
     ]
   }
 }

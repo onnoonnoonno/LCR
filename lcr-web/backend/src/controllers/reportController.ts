@@ -2205,93 +2205,135 @@ export function handleLcrForecast(req: Request, res: Response): void {
       inOut: string; mid: string; pKey: string;
     }>;
 
-    // Generate 8 monthly start dates (aligned with gap forecast EOMONTH chain)
-    const monthStarts: string[] = [];
-    {
-      let prevEom = eomonthLC(reportDate, 0); // EOMONTH(reportDate, 0) — same as gap forecast
-      for (let i = 0; i < 8; i++) {
-        if (i === 0) {
-          monthStarts.push(reportDate); // Month 0 = report date (baseline)
-        } else {
-          monthStarts.push(addDaysLC(prevEom, 1)); // Day after previous EOM
-          prevEom = eomonthLC(prevEom, 1);
+    // ---------------------------------------------------------------------------
+    // NEW APPROACH: daily-row rolling-window (matches Excel Summary & Working File)
+    //
+    // Excel logic (rows 21-264):
+    //   For each day D:
+    //     E[D] (Base Outflow) = Q11 (Tomorrow items) + SUM(Q[D+1 .. D+30])
+    //     I[D] (Base Inflow)  = R11 (Tomorrow items) + SUM(R[D+1 .. D+30])
+    //   where Q[date] / R[date] = SUMIFS(U, S=date, N="Outflow/Inflow")
+    //   i.e., the daily cash flow = sum of (q × rRate) for items maturing on that exact date.
+    //
+    // Key fix vs. old approach: "Tomorrow" items (S='Tomorrow') are ALWAYS included
+    // in every day's window, not just Month 0.
+    // ---------------------------------------------------------------------------
+
+    // Step 1: Pre-compute per-date daily cash flows (U = q × rRate)
+    let hqlaTotal = 0;
+    let tomorrowOut = 0;
+    let tomorrowInf = 0;
+    const dailyCFOut = new Map<string, number>(); // maturity date → outflow U-sum
+    const dailyCFInf = new Map<string, number>(); // maturity date → inflow U-sum
+
+    // Collect buyback-eligible items by maturity date for per-day buyback calc
+    interface BuybackItem { matDate: string; rate: number; amount: number }
+    const buybackItems: BuybackItem[] = [];
+
+    for (const r of enriched) {
+      if (r.inOut === 'HQLA') {
+        hqlaTotal += r.q; // Keep using raw q for HQLA (100% eligible)
+        continue;
+      }
+      const uVal = r.q * r.rRate; // Excel column U = Q × R
+      if (r.s === 'Tomorrow') {
+        if (r.inOut === 'Outflow') tomorrowOut += uVal;
+        else if (r.inOut === 'Inflow') tomorrowInf += uVal;
+      } else if (r.inOut === 'Outflow') {
+        dailyCFOut.set(r.s, (dailyCFOut.get(r.s) ?? 0) + uVal);
+      } else if (r.inOut === 'Inflow') {
+        dailyCFInf.set(r.s, (dailyCFInf.get(r.s) ?? 0) + uVal);
+      }
+      // Buyback applies to outflow items whose maturity is beyond the 30-day window
+      if (r.inOut === 'Outflow' && r.s !== 'Tomorrow') {
+        const buybackRate = BUYBACK_RATES_LC[r.mid];
+        if (buybackRate) {
+          buybackItems.push({ matDate: r.s, rate: buybackRate, amount: Math.abs(r.q) });
         }
       }
     }
 
-    // For each monthly start, compute CF table logic with shifted 30-day window.
-    // CRITICAL: "Tomorrow" items (matured before reportDate) are only included
-    // in Month 0's window. For future months they have already settled.
-    const isMonth0 = (ms: string) => ms === reportDate;
+    // Sort CF maps into arrays for efficient rolling-window sums
+    const outDates = Array.from(dailyCFOut.keys()).sort();
+    const infDates = Array.from(dailyCFInf.keys()).sort();
+    const buybackSorted = buybackItems.slice().sort((a, b) => a.matDate.localeCompare(b.matDate));
 
-    const forecast = monthStarts.map((monthStart) => {
-      const day30End = addDaysLC(monthStart, 30);
-
-      function isInWindowLC(sVal: string): boolean {
-        // "Tomorrow" = items that matured before report date.
-        // They only participate in Month 0's 30-day window (same as CF Table).
-        if (sVal === 'Tomorrow') return isMonth0(monthStart);
-        return sVal >= monthStart && sVal <= day30End;
+    // Helper: sum CFs for dates strictly after fromExcl up to and including toIncl
+    function sumCFRange(
+      sortedDates: string[],
+      cfMap: Map<string, number>,
+      fromExcl: string,
+      toIncl: string,
+    ): number {
+      let sum = 0;
+      for (const d of sortedDates) {
+        if (d <= fromExcl) continue;
+        if (d > toIncl) break;
+        sum += cfMap.get(d) ?? 0;
       }
+      return sum;
+    }
 
-      let hqlaTotal = 0;
-      let buybackOutflow = 0;
-
-      const pKeyData = new Map<string, {
-        inOut: string; assumptionRate: number; rawQSum: number; middleCategory: string;
-      }>();
-
-      for (const r of enriched) {
-        if (r.inOut === 'HQLA') {
-          hqlaTotal += r.q;
-        }
-
-        if ((r.inOut === 'Inflow' || r.inOut === 'Outflow') && isInWindowLC(r.s)) {
-          const existing = pKeyData.get(r.pKey);
-          if (existing) {
-            existing.rawQSum += r.q;
-          } else {
-            pKeyData.set(r.pKey, {
-              inOut: r.inOut, assumptionRate: r.rRate,
-              rawQSum: r.q, middleCategory: r.mid,
-            });
-          }
-        }
-
-        if (r.inOut === 'Outflow' && !isInWindowLC(r.s)) {
-          const buybackRate = BUYBACK_RATES_LC[r.mid];
-          if (buybackRate) {
-            buybackOutflow += Math.abs(r.q) * buybackRate;
-          }
-        }
+    // Helper: total buyback for items maturing AFTER the 30-day window end
+    function buybackForDay(day30End: string): number {
+      let total = 0;
+      for (const bi of buybackSorted) {
+        if (bi.matDate > day30End) total += bi.amount * bi.rate;
       }
+      return total;
+    }
 
-      let baseOutflow = 0;
-      let baseInflow = 0;
-      for (const [, d] of pKeyData) {
-        const k = d.rawQSum * d.assumptionRate;
-        if (d.inOut === 'Outflow') baseOutflow += k;
-        else if (d.inOut === 'Inflow') baseInflow += k;
-      }
+    // Step 2: Generate daily dates for 8 months
+    // End date = same day of month, 8 months after reportDate
+    function addMonthsLC(dateStr: string, months: number): string {
+      const y = parseInt(dateStr.substring(0, 4));
+      const m = parseInt(dateStr.substring(5, 7)) - 1;
+      const day = parseInt(dateStr.substring(8, 10));
+      const totalM = y * 12 + m + months;
+      const ny = Math.floor(totalM / 12);
+      const nm = totalM % 12;
+      const lastDay = new Date(Date.UTC(ny, nm + 1, 0)).getUTCDate();
+      const nd = Math.min(day, lastDay);
+      return `${ny}-${String(nm + 1).padStart(2, '0')}-${String(nd).padStart(2, '0')}`;
+    }
 
-      const grossOutflow = baseOutflow + buybackOutflow;
-      const hoFacility = grossOutflow * 0.20;
-      const sumInflow = baseInflow + hoFacility;
-      const cappedInflow = Math.min(sumInflow, grossOutflow * 0.75);
+    const endDateStr = addMonthsLC(reportDate, 8);
+    const dailyDates: string[] = [];
+    let curDate = reportDate;
+    while (curDate <= endDateStr) {
+      dailyDates.push(curDate);
+      curDate = addDaysLC(curDate, 1);
+    }
+
+    const hqla = Math.round(hqlaTotal);
+
+    // Step 3: Compute daily forecast rows
+    const forecast = dailyDates.map((dayDate) => {
+      const day30End = addDaysLC(dayDate, 30);
+
+      // Base outflow = Tomorrow items (always) + next 30 days of daily outflows
+      const baseOutflow = tomorrowOut + sumCFRange(outDates, dailyCFOut, dayDate, day30End);
+      // Base inflow  = Tomorrow items (always) + next 30 days of daily inflows
+      const baseInflow  = tomorrowInf + sumCFRange(infDates, dailyCFInf, dayDate, day30End);
+
+      const buybackOutflow = buybackForDay(day30End);
+      const grossOutflow   = baseOutflow + buybackOutflow;
+      const hoFacility     = grossOutflow * 0.20;
+      const sumInflow      = baseInflow + hoFacility;
+      const cappedInflow   = Math.min(sumInflow, grossOutflow * 0.75);
       const netCashOutflow = grossOutflow - cappedInflow;
-      const hqla = Math.round(hqlaTotal);
       const lcr = netCashOutflow > 0 ? (hqla / netCashOutflow) * 100 : null;
 
-      const d = new Date(monthStart + 'T12:00:00Z');
+      const d = new Date(dayDate + 'T12:00:00Z');
       const label = d.toLocaleString('en-US', { month: 'short', timeZone: 'UTC' }) +
         ' ' + d.getUTCFullYear();
 
       return {
-        date: monthStart,
+        date: dayDate,
         label,
         hqla,
         totalOutflow: Math.round(grossOutflow),
-        totalInflow: Math.round(baseInflow + hoFacility),
+        totalInflow:  Math.round(sumInflow),
         netCashOutflow: Math.round(netCashOutflow),
         lcr,
       };
@@ -2303,6 +2345,33 @@ export function handleLcrForecast(req: Request, res: Response): void {
       reportDate,
       forecast,
     });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: msg });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/verify/irrbb?runId=<id>
+// Returns IRRBB data stored at upload time from the Summary_IRRBB sheet.
+// ---------------------------------------------------------------------------
+
+export function handleIrrbb(req: Request, res: Response): void {
+  const { runId } = req.query as { runId?: string };
+  if (!runId) {
+    res.status(400).json({ success: false, error: 'Provide ?runId=<id>' });
+    return;
+  }
+  try {
+    const db = getDb();
+    const row = db.prepare('SELECT irrbb_data FROM report_runs WHERE id = ?').get(runId) as
+      { irrbb_data: string | null } | undefined;
+    if (!row) {
+      res.status(404).json({ success: false, error: 'Run not found' });
+      return;
+    }
+    const irrbb = row.irrbb_data ? JSON.parse(row.irrbb_data) : null;
+    res.json({ success: true, runId, irrbb });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     res.status(500).json({ success: false, error: msg });

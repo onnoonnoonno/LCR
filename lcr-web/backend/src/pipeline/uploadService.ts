@@ -13,6 +13,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { getDb } from '../db/client';
 import { parseExcelBuffer, extractReportDate } from '../services/excelParser';
+import { calculateIrrbb } from './irrbbService';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -81,6 +82,23 @@ export function uploadRawData(
     }
   });
   insertAll();
+
+  // Calculate and store IRRBB data from raw rows
+  try {
+    const irrbbRows = rows.map(r => ({
+      acCode:                r.acCode,
+      counterpartyNo:        r.counterpartyNo,
+      counterpartyName:      r.counterpartyName,
+      ccy:                   r.ccy,
+      baseCcyAmt:            r.baseCcyAmt,
+      nextInterestResetDate: r.nextInterestResetDate,
+    }));
+    const irrbb = calculateIrrbb(irrbbRows, reportDate);
+    db.prepare(`UPDATE report_runs SET irrbb_data = ? WHERE id = ?`)
+      .run(JSON.stringify(irrbb), runId);
+  } catch (e) {
+    console.warn('[uploadService] IRRBB calculation failed:', e);
+  }
 
   // Update run status
   db.prepare(`UPDATE report_runs SET status = 'uploaded' WHERE id = ?`).run(runId);

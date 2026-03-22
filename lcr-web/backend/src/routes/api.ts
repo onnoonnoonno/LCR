@@ -11,6 +11,7 @@
 
 import { Router, Request, Response } from 'express';
 import { uploadMiddleware } from '../middleware/upload';
+import { requireAdminPassword } from '../middleware/adminAuth';
 import {
   handleUploadAndProcess,
   handleUploadRaw,
@@ -33,6 +34,7 @@ import {
   handleUpdateAccountMapping,
   handleDeleteAccountMapping,
   handleLcrForecast,
+  handleIrrbb,
 } from '../controllers/reportController';
 
 export const apiRouter = Router();
@@ -85,7 +87,7 @@ apiRouter.get('/raw-rows', handleGetRawRows);
 // History retrieval
 // ---------------------------------------------------------------------------
 apiRouter.get('/history', handleListHistory);
-apiRouter.delete('/history/run/:runId', handleDeleteRun);
+apiRouter.delete('/history/run/:runId', requireAdminPassword, handleDeleteRun);
 apiRouter.delete('/history/reset', handleResetHistory);
 apiRouter.get('/summary', handleGetSummary);
 apiRouter.get('/latest-run', handleGetLatestRun);
@@ -95,9 +97,9 @@ apiRouter.get('/latest-run', handleGetLatestRun);
 // ---------------------------------------------------------------------------
 apiRouter.get('/account-mappings', handleGetAccountMappings);
 apiRouter.get('/account-mappings/distinct', handleGetAccountMappingDistinct);
-apiRouter.post('/account-mappings', handleCreateAccountMapping);
-apiRouter.put('/account-mappings/:id', handleUpdateAccountMapping);
-apiRouter.delete('/account-mappings/:id', handleDeleteAccountMapping);
+apiRouter.post('/account-mappings', requireAdminPassword, handleCreateAccountMapping);
+apiRouter.put('/account-mappings/:id', requireAdminPassword, handleUpdateAccountMapping);
+apiRouter.delete('/account-mappings/:id', requireAdminPassword, handleDeleteAccountMapping);
 
 // ---------------------------------------------------------------------------
 // Verification routes (step-by-step column verification)
@@ -107,6 +109,7 @@ apiRouter.get('/verify/gap-forecast', handleVerify7DayForecast);
 apiRouter.get('/verify/lmg-summary', handleVerifyLmgSummary);
 apiRouter.get('/verify/cf-table', handleVerifyCfTable);
 apiRouter.get('/verify/lcr-forecast', handleLcrForecast);
+apiRouter.get('/verify/irrbb', handleIrrbb);
 
 // ---------------------------------------------------------------------------
 // Debug routes (not linked from main UI)

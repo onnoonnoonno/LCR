@@ -203,4 +203,9 @@ function applySchema(db: Database.Database): void {
   } catch {
     // Column already exists
   }
+  try {
+    db.exec(`ALTER TABLE report_runs ADD COLUMN irrbb_data TEXT`);
+  } catch {
+    // Column already exists
+  }
 }

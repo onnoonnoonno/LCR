@@ -11,10 +11,14 @@ import {
   deleteHistoryRun,
   fetchLmgSummary,
   fetchGapForecast,
+  fetchIrrbb,
   HistoryItem,
   LmgSummaryResponse,
   ForecastResponse,
+  IrrbbData,
 } from '../services/api';
+import { IrrbbTable } from './IrrbbTable';
+import { PasswordModal } from './PasswordModal';
 
 // ---------------------------------------------------------------------------
 // Shared types / constants — identical to DashboardView
@@ -58,11 +62,11 @@ function checkBreach(value: number | null, cfg: ItemConfig): 'N' | 'Y' | 'Crisis
   return 'N';
 }
 
-function extractValues(lmg: LmgSummaryResponse): Record<ItemKey, number | null> {
+function extractValues(lmg: LmgSummaryResponse, irrbb?: IrrbbData | null): Record<ItemKey, number | null> {
   return {
     lcr:     lmg.lcrPercent !== null ? lmg.lcrPercent * 100 : null,
     '3m_lr': lmg.ratio3MLR  !== null ? lmg.ratio3MLR  * 100 : null,
-    '12m_ir': null,
+    '12m_ir': irrbb?.ratio != null ? irrbb.ratio * 100 : null,
     '7d_gap': lmg.kri['7D'].ratio !== null ? lmg.kri['7D'].ratio * 100 : null,
     '1m_gap': lmg.kri['1M'].ratio !== null ? lmg.kri['1M'].ratio * 100 : null,
     '3m_gap': lmg.kri['3M'].ratio !== null ? lmg.kri['3M'].ratio * 100 : null,
@@ -93,6 +97,7 @@ type LoadedReport = {
   fc7d: ForecastResponse;
   fc1m: ForecastResponse;
   fc3m: ForecastResponse;
+  irrbb: IrrbbData | null;
   currentValues: Record<ItemKey, number | null>;
   currentDate: string;
   previousValues: Record<ItemKey, number | null> | null;
@@ -111,8 +116,11 @@ export function HistoryView({ onSelectRun: _onSelectRun }: Props) {
   const [dateFilter, setDateFilter]     = useState('');
   const [page, setPage]                 = useState(0);
   const [popupItem, setPopupItem]       = useState<ItemKey | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<HistoryItem | null>(null);
-  const [deleting, setDeleting]         = useState(false);
+  const [deleteTarget, setDeleteTarget]   = useState<HistoryItem | null>(null);
+  // Password modal for delete
+  const [deletePasswordFor, setDeletePasswordFor] = useState<HistoryItem | null>(null);
+  const [deleteSubmitting, setDeleteSubmitting]   = useState(false);
+  const [deleteAuthError, setDeleteAuthError]     = useState<string | null>(null);
 
   // ---------------------------------------------------------------
   // Load history list
@@ -148,16 +156,21 @@ export function HistoryView({ onSelectRun: _onSelectRun }: Props) {
     setLoadingDate(item.reportDate);
     setSelectedDate(item.reportDate);
     setReport(null);
+    console.debug('[History] loadReport — runId:', item.runId, 'date:', item.reportDate);
     try {
-      const [lmg, fc7d, fc1m, fc3m] = await Promise.all([
+      const [lmg, fc7d, fc1m, fc3m, irrbbRes] = await Promise.all([
         fetchLmgSummary(item.runId),
         fetchGapForecast(item.runId, '7day'),
         fetchGapForecast(item.runId, '1month'),
         fetchGapForecast(item.runId, '3month'),
+        fetchIrrbb(item.runId).catch(() => null),
       ]);
 
+      const irrbb = irrbbRes?.irrbb ?? null;
+      console.debug('[History] irrbb for runId', item.runId, ':', irrbb ? `ratio=${irrbb.ratio}` : 'null');
+
       const currentDate = item.reportDate;
-      const currentValues = extractValues(lmg);
+      const currentValues = extractValues(lmg, irrbb);
 
       // Find previous: first history item with report_date strictly before current
       let previousValues: Record<ItemKey, number | null> | null = null;
@@ -166,13 +179,17 @@ export function HistoryView({ onSelectRun: _onSelectRun }: Props) {
       const prevItem = items.find((h) => toTs(h.reportDate) < curTs);
       if (prevItem) {
         try {
-          const prevLmg = await fetchLmgSummary(prevItem.runId);
-          previousValues = extractValues(prevLmg);
+          const [prevLmg, prevIrrbbRes] = await Promise.all([
+            fetchLmgSummary(prevItem.runId),
+            fetchIrrbb(prevItem.runId).catch(() => null),
+          ]);
+          const prevIrrbb = prevIrrbbRes?.irrbb ?? null;
+          previousValues = extractValues(prevLmg, prevIrrbb);
           prevDate = prevItem.reportDate;
         } catch { /* no previous data */ }
       }
 
-      setReport({ item, lmg, fc7d, fc1m, fc3m, currentValues, currentDate, previousValues, prevDate });
+      setReport({ item, lmg, fc7d, fc1m, fc3m, irrbb, currentValues, currentDate, previousValues, prevDate });
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load report');
     } finally {
@@ -184,18 +201,35 @@ export function HistoryView({ onSelectRun: _onSelectRun }: Props) {
   // Delete handler
   // ---------------------------------------------------------------
 
-  async function handleDelete() {
+  /** Step 1: user clicks Delete → show confirm modal */
+  function handleDeleteRequest(item: HistoryItem) {
+    setDeleteTarget(item);
+  }
+
+  /** Step 2: user confirms intent → show password modal */
+  function handleDeleteConfirmed() {
     if (!deleteTarget) return;
-    setDeleting(true);
+    setDeletePasswordFor(deleteTarget);
+    setDeleteTarget(null);
+    setDeleteAuthError(null);
+  }
+
+  /** Step 3: user enters password → perform delete */
+  async function handleDeleteWithPassword(password: string) {
+    if (!deletePasswordFor) return;
+    setDeleteSubmitting(true);
+    setDeleteAuthError(null);
     try {
-      await deleteHistoryRun(deleteTarget.runId);
-      if (report?.item.runId === deleteTarget.runId) { setReport(null); setSelectedDate(null); }
-      setDeleteTarget(null);
+      await deleteHistoryRun(deletePasswordFor.runId, password);
+      if (report?.item.runId === deletePasswordFor.runId) { setReport(null); setSelectedDate(null); }
+      setDeletePasswordFor(null);
       reload();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to delete');
-      setDeleteTarget(null);
-    } finally { setDeleting(false); }
+      const msg = e instanceof Error ? e.message : 'Failed to delete';
+      setDeleteAuthError(msg);
+    } finally {
+      setDeleteSubmitting(false);
+    }
   }
 
   // ---------------------------------------------------------------
@@ -226,8 +260,8 @@ export function HistoryView({ onSelectRun: _onSelectRun }: Props) {
           <span className="summary-item-chevron">{'\u203A'}</span>
           <span className="summary-item-label" style={{ whiteSpace: 'pre-line' }}>{item.label}</span>
         </td>
-        <td className="text-right mono summary-trigger-limit">{item.triggerDisplay}</td>
-        <td className="text-right mono summary-trigger-limit">{item.limitDisplay}</td>
+        <td className="text-right mono summary-trigger-val">{item.triggerDisplay}</td>
+        <td className="text-right mono summary-limit-val">{item.limitDisplay}</td>
         <td className="text-right mono summary-num-prev">{fmtVal(prev)}</td>
         <td className="text-right mono summary-num-current current-day-col">{fmtVal(curr)}</td>
         <td className="text-right mono summary-num-change" style={{ color: changeColor(diff, item.direction) }}>
@@ -317,9 +351,9 @@ export function HistoryView({ onSelectRun: _onSelectRun }: Props) {
                           {i === 0 && <td rowSpan={3} style={{ fontWeight: 600, verticalAlign: 'top' }}>Liquidity Gap Ratio</td>}
                           <td>{k}</td>
                           <td className="text-right mono" style={{ fontWeight: 700, color: row.reached === 'Y' ? 'var(--color-error)' : 'var(--color-success)' }}>{fmtPct(row.ratio)}</td>
-                          <td className="text-right mono" style={{ color: '#FF0000', fontWeight: 700 }}>{fmtPct(row.trigger)}</td>
+                          <td className="text-right mono" style={{ color: 'var(--color-trigger)', fontWeight: 700 }}>{fmtPct(row.trigger)}</td>
                           <td style={{ fontWeight: 700, textAlign: 'center', color: row.reached === 'Y' ? 'var(--color-error)' : 'var(--color-success)' }}>{row.reached}</td>
-                          <td className="text-right mono">{fmtPct(row.limit)}</td>
+                          <td className="text-right mono" style={{ color: 'var(--color-limit)', fontWeight: 700 }}>{fmtPct(row.limit)}</td>
                           <td style={{ fontWeight: 700, textAlign: 'center', color: row.breached === 'Y' ? 'var(--color-error)' : 'var(--color-success)' }}>{row.breached}</td>
                         </tr>
                       );
@@ -331,23 +365,26 @@ export function HistoryView({ onSelectRun: _onSelectRun }: Props) {
                 <table className="data-table">
                   <thead><tr><th className="text-right">LCR (%)</th><th className="text-right">3M Liquidity Ratio (%)</th></tr></thead>
                   <tbody><tr>
-                    <td className="text-right mono" style={{ fontWeight: 700, color: '#FF0000', fontSize: '1rem' }}>{report.lmg.lcrPercent !== null ? fmtPct(report.lmg.lcrPercent) : 'N/A'}</td>
-                    <td className="text-right mono" style={{ fontWeight: 700, color: '#FF0000', fontSize: '1rem' }}>{fmtPct(report.lmg.ratio3MLR)}</td>
+                    <td className="text-right mono" style={{ fontWeight: 700, color: 'var(--color-error)', fontSize: '1rem' }}>{report.lmg.lcrPercent !== null ? fmtPct(report.lmg.lcrPercent) : 'N/A'}</td>
+                    <td className="text-right mono" style={{ fontWeight: 700, color: 'var(--color-error)', fontSize: '1rem' }}>{fmtPct(report.lmg.ratio3MLR)}</td>
                   </tr></tbody>
                 </table>
               </div>
             </>
           )}
 
-          {cfg.key === '12m_ir' && (
-            <div style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--color-text-muted)', background: 'var(--color-bg)', borderRadius: 'var(--radius, 6px)' }}>
-              <p style={{ fontSize: '0.9rem' }}>Calculation formula will be provided in a future update.</p>
-            </div>
-          )}
+          {cfg.key === '12m_ir' && (() => {
+            console.debug('[History] popup irrbb for runId', report.item.runId, ':', report.irrbb ? `ratio=${report.irrbb.ratio}` : 'null');
+            return <IrrbbTable data={report.irrbb} />;
+          })()}
 
           {isGap && (() => {
             const data = gapMap[cfg.key].data;
             return (
+              <>
+                <div style={{ textAlign: 'right', fontSize: '0.78rem', color: 'var(--color-text-muted)', marginBottom: '0.35rem' }}>
+                  Unit: AUD
+                </div>
               <div style={{ overflowX: 'auto' }}>
                 <table className="data-table">
                   <thead><tr><th></th>{data.months.map((m) => <th key={m.from} className="text-right" style={{ minWidth: '100px' }}>{m.label}</th>)}</tr></thead>
@@ -359,11 +396,12 @@ export function HistoryView({ onSelectRun: _onSelectRun }: Props) {
                     <tr style={{ borderTop: '2px solid var(--color-border)' }}><td style={{ fontWeight: 700 }}>Gap</td>{data.months.map((m) => <td key={m.from} className="text-right mono" style={{ fontWeight: 700 }}>{m.gap.toLocaleString()}</td>)}</tr>
                     <tr><td>Total Asset</td>{data.months.map((m) => <td key={m.from} className="text-right mono">{m.totalAsset.toLocaleString()}</td>)}</tr>
                     <tr style={{ borderTop: '2px solid var(--color-border)' }}><td style={{ fontWeight: 700 }}>Gap Ratio</td>{data.months.map((m) => <td key={m.from} className="text-right mono" style={{ fontWeight: 700, fontSize: '1rem', color: m.gapRatio !== null && m.gapRatio < m.trigger ? 'var(--color-error)' : 'var(--color-success)' }}>{m.gapRatio !== null ? Math.round(m.gapRatio * 100) + '%' : 'N/A'}</td>)}</tr>
-                    <tr><td style={{ color: '#FF0000', fontWeight: 700 }}>Trigger</td>{data.months.map((m) => <td key={m.from} className="text-right mono" style={{ color: '#FF0000', fontWeight: 700 }}>{Math.round(m.trigger * 100)}%</td>)}</tr>
+                    <tr><td style={{ fontWeight: 700 }}>Trigger</td>{data.months.map((m) => <td key={m.from} className="text-right mono" style={{ color: 'var(--color-trigger)', fontWeight: 700 }}>{Math.round(m.trigger * 100)}%</td>)}</tr>
                     <tr><td>(-) Shortfall</td>{data.months.map((m) => <td key={m.from} className="text-right mono">{m.shortfall.toLocaleString()}</td>)}</tr>
                   </tbody>
                 </table>
               </div>
+              </>
             );
           })()}
 
@@ -419,7 +457,7 @@ export function HistoryView({ onSelectRun: _onSelectRun }: Props) {
                         <td onClick={() => loadReport(item)}><span style={{ color: 'var(--color-primary)', fontWeight: 700, fontSize: '0.95rem' }}>{item.reportDate}</span></td>
                         <td onClick={() => loadReport(item)} style={{ fontSize: '0.8rem', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.sourceFilename || '\u2014'}</td>
                         <td className="text-right mono" style={{ fontWeight: 700 }} onClick={() => loadReport(item)}>
-                          {item.lcrRatio !== null ? <span style={{ color: item.lcrRatio >= 100 ? 'var(--color-success)' : 'var(--color-error)' }}>{item.lcrRatio.toFixed(2)}%</span> : <span style={{ color: 'var(--color-text-muted)' }}>{'\u2014'}</span>}
+                          {item.lcrRatio !== null ? <span style={{ color: checkBreach(item.lcrRatio, ITEMS[0]) !== 'N' ? 'var(--color-error)' : 'var(--color-success)' }}>{item.lcrRatio.toFixed(2)}%</span> : <span style={{ color: 'var(--color-text-muted)' }}>{'\u2014'}</span>}
                         </td>
                         <td className="text-right mono" style={{ fontWeight: 700 }} onClick={() => loadReport(item)}>
                           {item.ratio3mLr !== null ? <span>{(item.ratio3mLr * 100).toFixed(2)}%</span> : <span style={{ color: 'var(--color-text-muted)' }}>{'\u2014'}</span>}
@@ -432,7 +470,7 @@ export function HistoryView({ onSelectRun: _onSelectRun }: Props) {
                           {isLoading ? <div className="spinner" style={{ width: 18, height: 18, borderWidth: 2 }} /> : <span style={{ color: isSelected ? 'var(--color-primary)' : 'var(--color-text-muted)', fontSize: '0.8rem', fontWeight: isSelected ? 700 : 400 }}>{isSelected ? 'Selected' : 'View'}</span>}
                         </td>
                         <td>
-                          <button className="btn btn--sm btn--ghost" style={{ color: 'var(--color-error)', fontSize: '0.78rem', padding: '0.2rem 0.5rem' }} onClick={(e) => { e.stopPropagation(); setDeleteTarget(item); }} title="Delete this report">{'\u2715'}</button>
+                          <button className="btn btn--sm btn--ghost" style={{ color: 'var(--color-error)', fontSize: '0.78rem', padding: '0.2rem 0.5rem' }} onClick={(e) => { e.stopPropagation(); handleDeleteRequest(item); }} title="Delete this report">{'\u2715'}</button>
                         </td>
                       </tr>
                     );
@@ -465,6 +503,7 @@ export function HistoryView({ onSelectRun: _onSelectRun }: Props) {
       {report && !loadingDate && renderRegulatoryIndicators()}
       {popupItem !== null && renderPopup()}
 
+      {/* Step 1: confirm intent */}
       {deleteTarget && (
         <div className="modal-overlay" onClick={() => setDeleteTarget(null)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '480px' }}>
@@ -472,11 +511,24 @@ export function HistoryView({ onSelectRun: _onSelectRun }: Props) {
             <p style={{ margin: '0 0 0.5rem' }}>Are you sure you want to delete the report for <strong>{deleteTarget.reportDate}</strong>?</p>
             <p style={{ margin: '0 0 1rem', fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>This will permanently delete the run, raw data, processed data, and summary. This action cannot be undone.</p>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
-              <button className="btn btn--ghost" onClick={() => setDeleteTarget(null)} disabled={deleting}>Cancel</button>
-              <button className="btn btn--primary" style={{ background: 'var(--color-error)' }} onClick={handleDelete} disabled={deleting}>{deleting ? 'Deleting...' : 'Delete'}</button>
+              <button className="btn btn--ghost" onClick={() => setDeleteTarget(null)}>Cancel</button>
+              <button className="btn btn--primary" style={{ background: 'var(--color-error)' }} onClick={handleDeleteConfirmed}>Continue</button>
             </div>
           </div>
         </div>
+      )}
+
+      {/* Step 2: password confirmation */}
+      {deletePasswordFor && (
+        <PasswordModal
+          title="Confirm Delete"
+          description={`Enter the admin password to permanently delete the report for ${deletePasswordFor.reportDate}.`}
+          confirmLabel="Delete"
+          onConfirm={handleDeleteWithPassword}
+          onCancel={() => { setDeletePasswordFor(null); setDeleteAuthError(null); }}
+          submitting={deleteSubmitting}
+          error={deleteAuthError}
+        />
       )}
     </div>
   );

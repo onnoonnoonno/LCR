@@ -371,6 +371,29 @@ export async function fetchLcrForecast(runId: string): Promise<LcrForecastRespon
   return handleResponse<LcrForecastResponse>(res);
 }
 
+export interface IrrbbTableRow {
+  label: string;
+  value: number | null;
+  isPercent: boolean;
+}
+
+export interface IrrbbData {
+  ratio: number | null;
+  table: IrrbbTableRow[];
+}
+
+export interface IrrbbResponse {
+  success: boolean;
+  runId: string;
+  irrbb: IrrbbData | null;
+}
+
+export async function fetchIrrbb(runId: string): Promise<IrrbbResponse> {
+  const params = new URLSearchParams({ runId });
+  const res = await fetch(`${base()}/api/verify/irrbb?${params}`);
+  return handleResponse<IrrbbResponse>(res);
+}
+
 export interface BsRe33Row {
   row: number;
   acCode: string;
@@ -464,30 +487,31 @@ export async function fetchAccountMappingDistinct(): Promise<AccountMappingDisti
 
 export type AccountMappingInput = Omit<AccountMappingRow, 'id'>;
 
-/** Create a new account mapping. */
-export async function createAccountMapping(data: AccountMappingInput): Promise<{ success: boolean; id: number }> {
+/** Create a new account mapping. Requires admin password. */
+export async function createAccountMapping(data: AccountMappingInput, password: string): Promise<{ success: boolean; id: number }> {
   const res = await fetch(`${base()}/api/account-mappings`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'x-admin-password': password },
     body: JSON.stringify(data),
   });
   return handleResponse<{ success: boolean; id: number }>(res);
 }
 
-/** Update an existing account mapping. */
-export async function updateAccountMapping(id: number, data: AccountMappingInput): Promise<{ success: boolean }> {
+/** Update an existing account mapping. Requires admin password. */
+export async function updateAccountMapping(id: number, data: AccountMappingInput, password: string): Promise<{ success: boolean }> {
   const res = await fetch(`${base()}/api/account-mappings/${id}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'x-admin-password': password },
     body: JSON.stringify(data),
   });
   return handleResponse<{ success: boolean }>(res);
 }
 
-/** Delete an account mapping. */
-export async function deleteAccountMapping(id: number): Promise<{ success: boolean }> {
+/** Delete an account mapping. Requires admin password. */
+export async function deleteAccountMapping(id: number, password: string): Promise<{ success: boolean }> {
   const res = await fetch(`${base()}/api/account-mappings/${id}`, {
     method: 'DELETE',
+    headers: { 'x-admin-password': password },
   });
   return handleResponse<{ success: boolean }>(res);
 }
@@ -538,8 +562,11 @@ export async function checkHealth(): Promise<{ status: string }> {
   return handleResponse<{ status: string }>(res);
 }
 
-/** Delete a specific report run and all its associated data. */
-export async function deleteHistoryRun(runId: string): Promise<{ success: boolean }> {
-  const res = await fetch(`${base()}/api/history/run/${runId}`, { method: 'DELETE' });
+/** Delete a specific report run and all its associated data. Requires admin password. */
+export async function deleteHistoryRun(runId: string, password: string): Promise<{ success: boolean }> {
+  const res = await fetch(`${base()}/api/history/run/${runId}`, {
+    method: 'DELETE',
+    headers: { 'x-admin-password': password },
+  });
   return handleResponse<{ success: boolean }>(res);
 }
