@@ -1344,10 +1344,9 @@ select.form-input {
 }
 
 .upload-logo-spin {
-  width: 80px;
-  height: 80px;
+  width: 120px;
+  height: 120px;
   object-fit: contain;
-  animation: logo-3d-spin 2.2s ease-in-out infinite;
 }
 
 .upload-processing-text {
@@ -1379,13 +1378,6 @@ select.form-input {
   margin: 0;
 }
 
-@keyframes logo-3d-spin {
-  0%   { transform: perspective(520px) rotateY(0deg)   rotateX(0deg); }
-  25%  { transform: perspective(520px) rotateY(90deg)  rotateX(12deg); }
-  50%  { transform: perspective(520px) rotateY(180deg) rotateX(0deg); }
-  75%  { transform: perspective(520px) rotateY(270deg) rotateX(-12deg); }
-  100% { transform: perspective(520px) rotateY(360deg) rotateX(0deg); }
-}
 
 /* ---------- Upload Processing Trivia section ------------ */
 .upload-trivia {
