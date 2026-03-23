@@ -1343,7 +1343,7 @@ export function DashboardView({ view, externalRunId, onNavigate }: Props) {
   // Main render
   // ----------------------------------------------------------
 
-  if (loading) return (<>{renderUploadOverlay()}<div className="verify-view"><div className="card" style={{ textAlign: 'center', padding: '3rem 1rem' }}><div className="upload-logo"><img src={logoImg} alt="NongHyup Bank" /></div><p style={{ marginTop: '1rem', color: 'var(--color-text-muted)' }}>Loading data...</p></div></div></>);
+  if (loading) return (<>{renderUploadOverlay()}<div className="verify-view"><div className="card" style={{ textAlign: 'center', padding: '3rem 1rem' }}><div className="upload-logo-bg"><img src={logoImg} alt="NongHyup Bank" /></div><p style={{ marginTop: '1rem', color: 'var(--color-text-muted)' }}>Loading data...</p></div></div></>);
   if (error) return (<>{renderUploadOverlay()}<div className="verify-view"><div className="card card--error" role="alert"><h2 className="card__title card__title--error">Error</h2><p className="error-message">{error}</p><button className="btn btn--primary" onClick={() => { setError(null); loadData(); }} style={{ marginTop: '1rem' }}>Retry</button></div></div></>);
   if (!hasData || !currentValues) return (<>{renderUploadOverlay()}<div className="verify-view"><div className="card" style={{ textAlign: 'center', padding: '2rem' }}><p style={{ color: 'var(--color-text-muted)', marginBottom: '1rem' }}>No reports found. Upload a file to get started.</p><UploadWithDate onUpload={handleFile} isLoading={false} /></div></div></>);
 

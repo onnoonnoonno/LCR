@@ -1343,6 +1343,7 @@ select.form-input {
   box-shadow: 0 24px 72px rgba(0, 0, 0, 0.22), 0 8px 24px rgba(0, 0, 0, 0.10);
 }
 
+/* --- Popup logo (inside the card): static, no animation --- */
 .upload-logo {
   display: flex;
   flex-direction: column;
@@ -1354,7 +1355,8 @@ select.form-input {
   width: 90px;
   height: 90px;
   object-fit: contain;
-  animation: logo-slow-spin 8s linear infinite;
+  animation: none;
+  transform: none;
 }
 
 .upload-logo-text {
@@ -1365,9 +1367,26 @@ select.form-input {
   margin: 0;
 }
 
-@keyframes logo-slow-spin {
-  from { transform: rotate(0deg); }
-  to   { transform: rotate(360deg); }
+/* --- Background logo (loading card behind the overlay): 3D spin --- */
+.upload-logo-bg {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.upload-logo-bg img {
+  width: 90px;
+  height: 90px;
+  object-fit: contain;
+  animation: logo-3d-spin 2.2s ease-in-out infinite;
+}
+
+@keyframes logo-3d-spin {
+  0%   { transform: perspective(520px) rotateY(0deg)   rotateX(0deg); }
+  25%  { transform: perspective(520px) rotateY(90deg)  rotateX(12deg); }
+  50%  { transform: perspective(520px) rotateY(180deg) rotateX(0deg); }
+  75%  { transform: perspective(520px) rotateY(270deg) rotateX(-12deg); }
+  100% { transform: perspective(520px) rotateY(360deg) rotateX(0deg); }
 }
 
 .upload-processing-text {
