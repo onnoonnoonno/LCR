@@ -14,7 +14,6 @@ import { SYDNEY_TRIVIA } from '../constants/sydneyTrivia';
 import { UploadWithDate } from './UploadWithDate';
 import { ExpandableCard } from './ExpandableCard';
 import { IrrbbTable } from './IrrbbTable';
-import nhBankLogo from '../assets/NH_Bank.png';
 import logoImg from '../assets/Logo.png';
 import {
   listHistory,
@@ -377,7 +376,10 @@ export function DashboardView({ view, externalRunId, onNavigate }: Props) {
     return (
       <div className="upload-processing-overlay">
         <div className="upload-processing-card">
-          <img src={nhBankLogo} className="upload-logo-spin" alt="Processing" style={{ width: 160, height: 160, animation: 'none', transform: 'none' }} />
+          <div className="upload-logo">
+            <img src={logoImg} alt="NongHyup Bank" />
+            <span className="upload-logo-text">NongHyup Bank</span>
+          </div>
           <div className="upload-status">
             <p className="upload-status-title">파일을 분석하고 있습니다...</p>
             <p className="upload-status-desc">현재 서버 환경에 따라 처리에 다소 시간이 걸릴 수 있습니다.</p>
@@ -1341,7 +1343,7 @@ export function DashboardView({ view, externalRunId, onNavigate }: Props) {
   // Main render
   // ----------------------------------------------------------
 
-  if (loading) return (<>{renderUploadOverlay()}<div className="verify-view"><div className="card" style={{ textAlign: 'center', padding: '3rem 1rem' }}><img src={logoImg} className="upload-logo-spin" alt="Loading" style={{ width: 160, height: 160, animation: 'none', transform: 'none' }} /><p style={{ marginTop: '1rem', color: 'var(--color-text-muted)' }}>Loading data...</p></div></div></>);
+  if (loading) return (<>{renderUploadOverlay()}<div className="verify-view"><div className="card" style={{ textAlign: 'center', padding: '3rem 1rem' }}><div className="upload-logo"><img src={logoImg} alt="NongHyup Bank" /></div><p style={{ marginTop: '1rem', color: 'var(--color-text-muted)' }}>Loading data...</p></div></div></>);
   if (error) return (<>{renderUploadOverlay()}<div className="verify-view"><div className="card card--error" role="alert"><h2 className="card__title card__title--error">Error</h2><p className="error-message">{error}</p><button className="btn btn--primary" onClick={() => { setError(null); loadData(); }} style={{ marginTop: '1rem' }}>Retry</button></div></div></>);
   if (!hasData || !currentValues) return (<>{renderUploadOverlay()}<div className="verify-view"><div className="card" style={{ textAlign: 'center', padding: '2rem' }}><p style={{ color: 'var(--color-text-muted)', marginBottom: '1rem' }}>No reports found. Upload a file to get started.</p><UploadWithDate onUpload={handleFile} isLoading={false} /></div></div></>);
 

@@ -1343,10 +1343,31 @@ select.form-input {
   box-shadow: 0 24px 72px rgba(0, 0, 0, 0.22), 0 8px 24px rgba(0, 0, 0, 0.10);
 }
 
-.upload-logo-spin {
-  width: 120px;
-  height: 120px;
+.upload-logo {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.upload-logo img {
+  width: 90px;
+  height: 90px;
   object-fit: contain;
+  animation: logo-slow-spin 8s linear infinite;
+}
+
+.upload-logo-text {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #1e293b;
+  letter-spacing: 0.01em;
+  margin: 0;
+}
+
+@keyframes logo-slow-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
 }
 
 .upload-processing-text {
