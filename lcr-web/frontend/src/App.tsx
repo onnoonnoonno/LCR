@@ -106,6 +106,11 @@ export default function App() {
     setTab('dashboard');
   }
 
+  function handleNavigateToLcr(runId: string) {
+    setSelectedRunId(runId);
+    setTab('lcr');
+  }
+
   function handleTabChange(newTab: Tab) {
     if (newTab === 'dashboard') setSelectedRunId(undefined);
     setTab(newTab);
@@ -125,7 +130,7 @@ export default function App() {
               className="app-header__logo-img"
             />
             <div className="app-header__title-group">
-              <h1 className="app-header__title">LCR Management</h1>
+              <h1 className="app-header__title">Liquidity Management</h1>
             </div>
           </div>
 
@@ -172,12 +177,12 @@ export default function App() {
           {isDashboardGroup && (
             <DashboardView
               view={tab as ViewMode}
-              externalRunId={tab === 'dashboard' ? selectedRunId : undefined}
+              externalRunId={DASHBOARD_GROUP.includes(tab) ? selectedRunId : undefined}
               onNavigate={(t) => handleTabChange(t as Tab)}
             />
           )}
           {tab === 'forecast' && <VerifyView externalRunId={selectedRunId} />}
-          {tab === 'history'  && <HistoryView onSelectRun={handleSelectFromHistory} userRole={authUser.role} />}
+          {tab === 'history'  && <HistoryView onSelectRun={handleSelectFromHistory} userRole={authUser.role} onNavigateToLcr={handleNavigateToLcr} />}
           {tab === 'mapping'  && <AccountMappingView userRole={authUser.role} />}
           {tab === 'cftable'  && <CfTableView />}
           {tab === 'rawdebug' && <RawUploadDebugView />}
@@ -186,7 +191,7 @@ export default function App() {
       </main>
 
       <footer className="app-footer">
-        <p>LCR Management &mdash; Internal Use Only</p>
+        <p>Liquidity Management &mdash; Internal Use Only</p>
       </footer>
     </div>
   );

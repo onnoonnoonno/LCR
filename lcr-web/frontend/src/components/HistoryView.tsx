@@ -88,7 +88,7 @@ function changeColor(ch: number | null, dir: 'lte' | 'gte'): string | undefined 
 // Component
 // ---------------------------------------------------------------------------
 
-interface Props { onSelectRun: (runId: string) => void; userRole?: string; }
+interface Props { onSelectRun: (runId: string) => void; userRole?: string; onNavigateToLcr?: (runId: string) => void; }
 
 type LoadedReport = {
   item: HistoryItem;
@@ -105,7 +105,7 @@ type LoadedReport = {
 
 const PAGE_SIZE = 5;
 
-export function HistoryView({ onSelectRun: _onSelectRun, userRole }: Props) {
+export function HistoryView({ onSelectRun: _onSelectRun, userRole, onNavigateToLcr }: Props) {
   const isAdmin = userRole === 'admin';
   const [items, setItems]               = useState<HistoryItem[]>([]);
   const [loading, setLoading]           = useState(true);
@@ -399,7 +399,7 @@ export function HistoryView({ onSelectRun: _onSelectRun, userRole }: Props) {
 
           {cfg.key === 'lcr' && (
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.25rem' }}>
-              <button className="btn btn--primary" onClick={() => setPopupItem(null)}>More Details {'\u2192'}</button>
+              <button className="btn btn--primary" onClick={() => { setPopupItem(null); if (report) onNavigateToLcr?.(report.item.runId); }}>More Details {'\u2192'}</button>
             </div>
           )}
         </div>

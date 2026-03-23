@@ -12,7 +12,8 @@
 import { Request, Response } from 'express';
 import { uploadRawData }    from '../pipeline/uploadService';
 import { processReportRun, loadReferenceDataFromDb } from '../pipeline/pipelineService';
-import { getDb } from '../db/client';
+import { getPool } from '../db/client';
+import { v4 as uuidv4 } from 'uuid';
 import { lookupAccountMapping } from '../reference/accountMappingService';
 import {
   listReportDates,
@@ -30,11 +31,11 @@ import {
 // Destructive actions (delete/mutate) are enforced at the route level
 // via requireRole('admin') and are not handled here.
 // ---------------------------------------------------------------------------
-function canAccessRun(runId: string, req: Request): boolean {
+async function canAccessRun(runId: string, req: Request): Promise<boolean> {
   if (!req.user) return false; // not authenticated
-  const db = getDb();
-  const run = db.prepare('SELECT id FROM report_runs WHERE id = ?').get(runId);
-  return run != null; // run exists → any authenticated user may read it
+  const pool = getPool();
+  const { rows: _carRows } = await pool.query('SELECT id FROM report_runs WHERE id = $1', [runId]);
+  return _carRows.length > 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -42,7 +43,7 @@ function canAccessRun(runId: string, req: Request): boolean {
 // Accepts an Excel file, runs the full pipeline, stores results, returns summary.
 // ---------------------------------------------------------------------------
 
-export function handleUploadAndProcess(req: Request, res: Response): void {
+export async function handleUploadAndProcess(req: Request, res: Response): Promise<void> {
   const file = req.file;
   if (!file) {
     res.status(400).json({ success: false, error: 'No file uploaded.' });
@@ -51,10 +52,10 @@ export function handleUploadAndProcess(req: Request, res: Response): void {
 
   try {
     // Step 1: store raw data
-    const uploadResult = uploadRawData(file.buffer, file.originalname, undefined, req.user?.userId);
+    const uploadResult = await uploadRawData(file.buffer, file.originalname, undefined, req.user?.userId);
 
     // Step 2: run full pipeline (classify → calculate → aggregate → persist)
-    const pipelineResult = processReportRun(uploadResult.runId);
+    const pipelineResult = await processReportRun(uploadResult.runId);
 
     const s = pipelineResult.summary;
 
@@ -92,7 +93,7 @@ export function handleUploadAndProcess(req: Request, res: Response): void {
 // Returns runId, reportDate, rawRowCount for the verification workflow.
 // ---------------------------------------------------------------------------
 
-export function handleUploadRaw(req: Request, res: Response): void {
+export async function handleUploadRaw(req: Request, res: Response): Promise<void> {
   const file = req.file;
   if (!file) {
     res.status(400).json({ success: false, error: 'No file uploaded.' });
@@ -102,7 +103,7 @@ export function handleUploadRaw(req: Request, res: Response): void {
   try {
     // Manual report date from form field (takes priority over filename extraction)
     const manualDate = req.body?.reportDate as string | undefined;
-    const uploadResult = uploadRawData(file.buffer, file.originalname, manualDate, req.user?.userId);
+    const uploadResult = await uploadRawData(file.buffer, file.originalname, manualDate, req.user?.userId);
 
     res.json({
       success:        true,
@@ -123,7 +124,7 @@ export function handleUploadRaw(req: Request, res: Response): void {
 // Returns paginated raw rows for a given report run.
 // ---------------------------------------------------------------------------
 
-export function handleGetRawRows(req: Request, res: Response): void {
+export async function handleGetRawRows(req: Request, res: Response): Promise<void> {
   const { runId, page, pageSize } = req.query as {
     runId?: string; page?: string; pageSize?: string;
   };
@@ -133,7 +134,7 @@ export function handleGetRawRows(req: Request, res: Response): void {
     return;
   }
 
-  if (!canAccessRun(runId, req)) {
+  if (!await canAccessRun(runId, req)) {
     res.status(403).json({ success: false, error: 'Access denied.' });
     return;
   }
@@ -141,7 +142,7 @@ export function handleGetRawRows(req: Request, res: Response): void {
   try {
     const p  = parseInt(page     ?? '1',   10);
     const ps = parseInt(pageSize ?? '100', 10);
-    const result = getRawRows(runId, p, ps);
+    const result = await getRawRows(runId, p, ps);
     res.json({
       success:    true,
       runId,
@@ -163,14 +164,14 @@ export function handleGetRawRows(req: Request, res: Response): void {
 // Used by the frontend to auto-load the latest report on page open.
 // ---------------------------------------------------------------------------
 
-export function handleGetLatestRun(_req: Request, res: Response): void {
+export async function handleGetLatestRun(_req: Request, res: Response): Promise<void> {
   try {
-    const db = getDb();
+    const pool = getPool();
     // Shared visibility: return the most recently uploaded run across all users.
     // Among runs for the same report_date, only the latest upload is considered
     // (consistent with the deduplication rule applied in handleListHistory).
     type LatestRunRow = { run_id: string; report_date: string; source_filename: string; uploaded_at: string; row_count: number };
-    const row = db.prepare(`
+    const { rows: _lrr } = await pool.query(`
       SELECT rr.id AS run_id, rr.report_date, rr.source_filename, rr.uploaded_at,
              (SELECT COUNT(*) FROM raw_rows WHERE report_run_id = rr.id) AS row_count
       FROM report_runs rr
@@ -180,7 +181,8 @@ export function handleGetLatestRun(_req: Request, res: Response): void {
         ORDER BY sub.uploaded_at DESC LIMIT 1
       )
       ORDER BY rr.uploaded_at DESC LIMIT 1
-    `).get() as LatestRunRow | undefined;
+    `);
+    const row = _lrr[0] as LatestRunRow | undefined;
 
     if (!row) {
       res.json({ success: true, found: false });
@@ -207,14 +209,14 @@ export function handleGetLatestRun(_req: Request, res: Response): void {
 // Returns a list of all available report dates with summary snapshots.
 // ---------------------------------------------------------------------------
 
-export function handleListHistory(_req: Request, res: Response): void {
+export async function handleListHistory(_req: Request, res: Response): Promise<void> {
   try {
-    const db = getDb();
+    const pool = getPool();
 
     // Shared visibility: all authenticated users see the same history.
     // Deduplication: for each report_date, only the most recently uploaded run is returned.
     // Older duplicate uploads for the same date are soft-hidden (still in DB for audit).
-    const rows = db.prepare(`
+    const { rows } = await pool.query(`
       SELECT rr.id AS run_id, rr.report_date, rr.source_filename, rr.uploaded_at, rr.status,
              rs.eligible_hqla, rs.gross_outflows, rs.net_cash_outflows, rs.lcr_ratio, rs.ratio_3m_lr
       FROM report_runs rr
@@ -225,11 +227,7 @@ export function handleListHistory(_req: Request, res: Response): void {
         ORDER BY uploaded_at DESC LIMIT 1
       )
       ORDER BY rr.report_date DESC
-    `).all() as Array<{
-      run_id: string; report_date: string; source_filename: string; uploaded_at: string; status: string;
-      eligible_hqla: number | null; gross_outflows: number | null;
-      net_cash_outflows: number | null; lcr_ratio: number | null; ratio_3m_lr: number | null;
-    }>;
+    `);
 
     const items = rows.map((r: any) => ({
       reportDate:      r.report_date,
@@ -257,7 +255,7 @@ export function handleListHistory(_req: Request, res: Response): void {
 // report_runs). Does NOT touch reference tables (account_mappings, etc.).
 // ---------------------------------------------------------------------------
 
-export function handleDeleteRun(req: Request, res: Response): void {
+export async function handleDeleteRun(req: Request, res: Response): Promise<void> {
   try {
     const { runId } = req.params;
     if (!runId) {
@@ -265,16 +263,16 @@ export function handleDeleteRun(req: Request, res: Response): void {
       return;
     }
 
-    const db = getDb();
-    const exists = db.prepare('SELECT id FROM report_runs WHERE id = ?').get(runId);
-    if (!exists) {
+    const pool = getPool();
+    const { rows: _existRows } = await pool.query('SELECT id FROM report_runs WHERE id = $1', [runId]);
+    if (_existRows.length === 0) {
       res.status(404).json({ success: false, error: 'Run not found.' });
       return;
     }
-    db.prepare('DELETE FROM report_summaries WHERE report_run_id = ?').run(runId);
-    db.prepare('DELETE FROM processed_rows WHERE report_run_id = ?').run(runId);
-    db.prepare('DELETE FROM raw_rows WHERE report_run_id = ?').run(runId);
-    db.prepare('DELETE FROM report_runs WHERE id = ?').run(runId);
+    await pool.query('DELETE FROM report_summaries WHERE report_run_id = $1', [runId]);
+    await pool.query('DELETE FROM processed_rows WHERE report_run_id = $1', [runId]);
+    await pool.query('DELETE FROM raw_rows WHERE report_run_id = $1', [runId]);
+    await pool.query('DELETE FROM report_runs WHERE id = $1', [runId]);
 
     res.json({ success: true });
   } catch (err) {
@@ -283,15 +281,13 @@ export function handleDeleteRun(req: Request, res: Response): void {
   }
 }
 
-export function handleResetHistory(_req: Request, res: Response): void {
+export async function handleResetHistory(_req: Request, res: Response): Promise<void> {
   try {
-    const db = getDb();
-    db.exec(`
-      DELETE FROM report_summaries;
-      DELETE FROM processed_rows;
-      DELETE FROM raw_rows;
-      DELETE FROM report_runs;
-    `);
+    const pool = getPool();
+    await pool.query('DELETE FROM report_summaries');
+    await pool.query('DELETE FROM processed_rows');
+    await pool.query('DELETE FROM raw_rows');
+    await pool.query('DELETE FROM report_runs');
     res.json({ success: true, message: 'All history data has been deleted.' });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -305,16 +301,16 @@ export function handleResetHistory(_req: Request, res: Response): void {
 // Also accepts ?runId=<uuid> to load a specific run.
 // ---------------------------------------------------------------------------
 
-export function handleGetSummary(req: Request, res: Response): void {
+export async function handleGetSummary(req: Request, res: Response): Promise<void> {
   const { date, runId } = req.query as { date?: string; runId?: string };
 
   try {
     let summary = null;
 
     if (runId) {
-      summary = getSummaryByRunId(runId);
+      summary = await getSummaryByRunId(runId);
     } else if (date) {
-      summary = getSummaryByDate(date);
+      summary = await getSummaryByDate(date);
     } else {
       res.status(400).json({ success: false, error: 'Provide ?date=YYYY-MM-DD or ?runId=<id>' });
       return;
@@ -338,7 +334,7 @@ export function handleGetSummary(req: Request, res: Response): void {
 // Intentionally kept separate from main UI flow.
 // ---------------------------------------------------------------------------
 
-export function handleGetDebugRows(req: Request, res: Response): void {
+export async function handleGetDebugRows(req: Request, res: Response): Promise<void> {
   const { runId, page, pageSize } = req.query as {
     runId?: string; page?: string; pageSize?: string;
   };
@@ -348,7 +344,7 @@ export function handleGetDebugRows(req: Request, res: Response): void {
     return;
   }
 
-  if (!canAccessRun(runId, req)) {
+  if (!await canAccessRun(runId, req)) {
     res.status(403).json({ success: false, error: 'Access denied.' });
     return;
   }
@@ -356,7 +352,7 @@ export function handleGetDebugRows(req: Request, res: Response): void {
   try {
     const p  = parseInt(page     ?? '1',   10);
     const ps = parseInt(pageSize ?? '100', 10);
-    const result = getProcessedRows(runId, p, ps);
+    const result = await getProcessedRows(runId, p, ps);
     res.json({
       success:   true,
       runId,
@@ -378,7 +374,7 @@ export function handleGetDebugRows(req: Request, res: Response): void {
 // equivalent value so the user can compare against their Excel row by row.
 // ---------------------------------------------------------------------------
 
-export function handleVerifyColumnL(req: Request, res: Response): void {
+export async function handleVerifyColumnL(req: Request, res: Response): Promise<void> {
   const { runId, page, pageSize } = req.query as {
     runId?: string; page?: string; pageSize?: string;
   };
@@ -388,45 +384,41 @@ export function handleVerifyColumnL(req: Request, res: Response): void {
     return;
   }
 
-  if (!canAccessRun(runId, req)) {
+  if (!await canAccessRun(runId, req)) {
     res.status(403).json({ success: false, error: 'Access denied.' });
     return;
   }
 
   try {
     // Ensure account mapping index is built
-    loadReferenceDataFromDb();
+    await loadReferenceDataFromDb();
 
-    const db = getDb();
+    const pool = getPool();
     const p  = parseInt(page     ?? '1',  10);
     const ps = parseInt(pageSize ?? '50', 10);
 
     // Total count
-    const total = (db.prepare(
-      'SELECT COUNT(*) AS cnt FROM raw_rows WHERE report_run_id = ?'
-    ).get(runId) as { cnt: number }).cnt;
+    const { rows: _cntRows } = await pool.query(
+      'SELECT COUNT(*) AS cnt FROM raw_rows WHERE report_run_id = $1', [runId]
+    );
+    const total = parseInt(_cntRows[0].cnt, 10);
 
     const offset = (p - 1) * ps;
 
     // Fetch report date for this run
-    const runMeta = db.prepare('SELECT report_date FROM report_runs WHERE id = ?').get(runId) as
-      { report_date: string } | undefined;
+    const { rows: _rmRows } = await pool.query('SELECT report_date FROM report_runs WHERE id = $1', [runId]);
+    const runMeta = _rmRows[0] as { report_date: string } | undefined;
     const reportDate = runMeta?.report_date ?? '';
 
     // Fetch raw rows for this page
-    const rawDbRows = db.prepare(`
+    const { rows: rawDbRows } = await pool.query(`
       SELECT id, row_number, ac_code, ac_name, ref_no, counterparty_no,
              base_ccy_amt, maturity_date
       FROM raw_rows
-      WHERE report_run_id = ?
+      WHERE report_run_id = $1
       ORDER BY row_number
-      LIMIT ? OFFSET ?
-    `).all(runId, ps, offset) as Array<{
-      id: number; row_number: number; ac_code: string | null;
-      ac_name: string | null; ref_no: string | null;
-      counterparty_no: string | null; base_ccy_amt: number | null;
-      maturity_date: string | null;
-    }>;
+      LIMIT $2 OFFSET $3
+    `, [runId, ps, offset]);
 
     // ---------------------------------------------------------------
     // N-column override (BS_RE33 H4:H6, I4)
@@ -460,10 +452,10 @@ export function handleVerifyColumnL(req: Request, res: Response): void {
     ]);
 
     // Build customer type lookup map from DB (raw Excel values)
-    const ctRows = db.prepare(
+    const { rows: ctRows } = await pool.query(
       'SELECT counterparty_no, customer_type FROM customer_types'
-    ).all() as Array<{ counterparty_no: string; customer_type: string }>;
-    const ctMap = new Map(ctRows.map((r) => [r.counterparty_no.trim(), r.customer_type]));
+    );
+    const ctMap = new Map((ctRows as Array<{ counterparty_no: string; customer_type: string }>).map((r) => [r.counterparty_no.trim(), r.customer_type]));
 
     // ---------------------------------------------------------------
     // R-column: Assumption rate lookup
@@ -471,10 +463,10 @@ export function handleVerifyColumnL(req: Request, res: Response): void {
     // Lookup key = P (pKey), returns assumption rate (%).
     // If no match → #N/A in Excel (we return null).
     // ---------------------------------------------------------------
-    const arRows = db.prepare(
+    const { rows: arRows } = await pool.query(
       'SELECT p_key, assumption_rate FROM assumption_rules'
-    ).all() as Array<{ p_key: string; assumption_rate: number }>;
-    const arMap = new Map(arRows.map((r) => [r.p_key.trim(), r.assumption_rate]));
+    );
+    const arMap = new Map((arRows as Array<{ p_key: string; assumption_rate: number }>).map((r) => [r.p_key.trim(), r.assumption_rate]));
 
     // ---------------------------------------------------------------
     // S-column: LCR Maturity
@@ -487,10 +479,10 @@ export function handleVerifyColumnL(req: Request, res: Response): void {
     // 2. If no match → IF(J < reportDate, "Tomorrow", J)
     //    If J is empty → empty < any date → "Tomorrow"
     // ---------------------------------------------------------------
-    const moRows = db.prepare(
+    const { rows: moRows } = await pool.query(
       'SELECT ac_code, formula_type, formula_params FROM maturity_overrides'
-    ).all() as Array<{ ac_code: string; formula_type: string; formula_params: string | null }>;
-    const moMap = new Map(moRows.map((r) => [(r.ac_code ?? '').trim(), r]));
+    );
+    const moMap = new Map((moRows as Array<{ ac_code: string; formula_type: string; formula_params: string | null }>).map((r) => [(r.ac_code ?? '').trim(), r]));
 
     /** Resolve a maturity override formula to a concrete value given reportDate */
     function resolveMaturityOverride(
@@ -646,7 +638,7 @@ export function handleVerifyColumnL(req: Request, res: Response): void {
       return result;
     }
 
-    const rows = rawDbRows.map((r) => {
+    const rows = (rawDbRows as Array<{ row_number: number; ac_code: string | null; ac_name: string | null; ref_no: string | null; counterparty_no: string | null; base_ccy_amt: number | null; maturity_date: string | null }>).map((r) => {
       const mapping  = lookupAccountMapping(r.ac_code);
       const refNo    = r.ref_no?.trim() ?? '';
       const isNOverride = N_OVERRIDE_REFNOS.has(refNo);
@@ -737,9 +729,9 @@ export function handleVerifyColumnL(req: Request, res: Response): void {
     });
 
     // Compute overall stats across ALL rows (not just this page)
-    const allRows = db.prepare(
-      'SELECT ac_code, ref_no, counterparty_no FROM raw_rows WHERE report_run_id = ?'
-    ).all(runId) as Array<{ ac_code: string | null; ref_no: string | null; counterparty_no: string | null }>;
+    const { rows: allRows } = await pool.query(
+      'SELECT ac_code, ref_no, counterparty_no FROM raw_rows WHERE report_run_id = $1', [runId]
+    );
 
     let totalMapped = 0;
     let totalUnmapped = 0;
@@ -751,7 +743,7 @@ export function handleVerifyColumnL(req: Request, res: Response): void {
     let totalNoFlip = 0;
     let totalRFound = 0;
     let totalRMissing = 0;
-    for (const r of allRows) {
+    for (const r of (allRows as Array<{ ac_code: string | null; ref_no: string | null; counterparty_no: string | null }>)) {
       const m = lookupAccountMapping(r.ac_code);
       if (m) totalMapped++; else totalUnmapped++;
       if (N_OVERRIDE_REFNOS.has(r.ref_no?.trim() ?? '')) totalOverride++; else totalLookup++;
@@ -799,24 +791,24 @@ export function handleVerifyColumnL(req: Request, res: Response): void {
 //   type=3month: rows 33-43, to = EOMONTH(from, 3),    trigger = -40%
 // ---------------------------------------------------------------------------
 
-export function handleVerify7DayForecast(req: Request, res: Response): void {
+export async function handleVerify7DayForecast(req: Request, res: Response): Promise<void> {
   const { runId, type } = req.query as { runId?: string; type?: string };
   const forecastType = type === '1month' ? '1month' : type === '3month' ? '3month' : '7day';
   if (!runId) {
     res.status(400).json({ success: false, error: 'Provide ?runId=<id>' });
     return;
   }
-  if (!canAccessRun(runId, req)) {
+  if (!await canAccessRun(runId, req)) {
     res.status(403).json({ success: false, error: 'Access denied.' });
     return;
   }
 
   try {
-    loadReferenceDataFromDb();
-    const db = getDb();
+    await loadReferenceDataFromDb();
+    const pool = getPool();
 
-    const runMeta = db.prepare('SELECT report_date FROM report_runs WHERE id = ?').get(runId) as
-      { report_date: string } | undefined;
+    const { rows: _rmRows } = await pool.query('SELECT report_date FROM report_runs WHERE id = $1', [runId]);
+    const runMeta = _rmRows[0] as { report_date: string } | undefined;
     if (!runMeta) {
       res.status(404).json({ success: false, error: 'Run not found' });
       return;
@@ -824,13 +816,11 @@ export function handleVerify7DayForecast(req: Request, res: Response): void {
     const reportDate = runMeta.report_date;
 
     // Load reference data
-    const amRows = db.prepare('SELECT ac_code, asset_liability_type FROM account_mappings')
-      .all() as Array<{ ac_code: string; asset_liability_type: string }>;
-    const amMap = new Map(amRows.map((r) => [r.ac_code, r.asset_liability_type]));
+    const { rows: amRows } = await pool.query('SELECT ac_code, asset_liability_type FROM account_mappings');
+    const amMap = new Map((amRows as Array<{ ac_code: string; asset_liability_type: string }>).map((r) => [r.ac_code, r.asset_liability_type]));
 
-    const moRows = db.prepare('SELECT ac_code, formula_type, formula_params FROM maturity_overrides')
-      .all() as Array<{ ac_code: string; formula_type: string; formula_params: string | null }>;
-    const moMap = new Map(moRows.map((r) => [(r.ac_code ?? '').trim(), r]));
+    const { rows: moRows } = await pool.query('SELECT ac_code, formula_type, formula_params FROM maturity_overrides');
+    const moMap = new Map((moRows as Array<{ ac_code: string; formula_type: string; formula_params: string | null }>).map((r) => [(r.ac_code ?? '').trim(), r]));
 
     const V_OVERRIDE: Record<string, string> = { '10255002': 'Tomorrow' };
 
@@ -889,14 +879,12 @@ export function handleVerify7DayForecast(req: Request, res: Response): void {
     }
 
     // Fetch all raw rows
-    const rawRows = db.prepare(
-      'SELECT ac_code, base_ccy_amt, maturity_date FROM raw_rows WHERE report_run_id = ?'
-    ).all(runId) as Array<{
-      ac_code: string | null; base_ccy_amt: number | null; maturity_date: string | null;
-    }>;
+    const { rows: rawRows } = await pool.query(
+      'SELECT ac_code, base_ccy_amt, maturity_date FROM raw_rows WHERE report_run_id = $1', [runId]
+    );
 
     // Pre-compute V and W for each row once
-    const enriched = rawRows.map((r) => {
+    const enriched = (rawRows as Array<{ ac_code: string | null; base_ccy_amt: number | null; maturity_date: string | null }>).map((r) => {
       const ac = (r.ac_code ?? '').trim();
       const w = amMap.get(ac) ?? '';
       const v = computeV(ac, r.maturity_date);
@@ -971,25 +959,25 @@ export function handleVerify7DayForecast(req: Request, res: Response): void {
 // Reproduces the exact Excel LMG sheet aggregation.
 // ---------------------------------------------------------------------------
 
-export function handleVerifyLmgSummary(req: Request, res: Response): void {
+export async function handleVerifyLmgSummary(req: Request, res: Response): Promise<void> {
   const { runId } = req.query as { runId?: string };
 
   if (!runId) {
     res.status(400).json({ success: false, error: 'Provide ?runId=<id>' });
     return;
   }
-  if (!canAccessRun(runId, req)) {
+  if (!await canAccessRun(runId, req)) {
     res.status(403).json({ success: false, error: 'Access denied.' });
     return;
   }
 
   try {
-    loadReferenceDataFromDb();
-    const db = getDb();
+    await loadReferenceDataFromDb();
+    const pool = getPool();
 
     // Fetch run metadata
-    const runMeta = db.prepare('SELECT report_date FROM report_runs WHERE id = ?').get(runId) as
-      { report_date: string } | undefined;
+    const { rows: _rmRows } = await pool.query('SELECT report_date FROM report_runs WHERE id = $1', [runId]);
+    const runMeta = _rmRows[0] as { report_date: string } | undefined;
     if (!runMeta) {
       res.status(404).json({ success: false, error: 'Run not found' });
       return;
@@ -997,15 +985,11 @@ export function handleVerifyLmgSummary(req: Request, res: Response): void {
     const reportDate = runMeta.report_date;
 
     // Fetch ALL raw rows for this run
-    const rawDbRows = db.prepare(`
+    const { rows: rawDbRows } = await pool.query(`
       SELECT ac_code, ref_no, counterparty_no, base_ccy_amt, maturity_date
       FROM raw_rows
-      WHERE report_run_id = ?
-    `).all(runId) as Array<{
-      ac_code: string | null; ref_no: string | null;
-      counterparty_no: string | null; base_ccy_amt: number | null;
-      maturity_date: string | null;
-    }>;
+      WHERE report_run_id = $1
+    `, [runId]);
 
     // --- Reuse the same reference data as column-l endpoint ---
     const O_ELIGIBLE_CATEGORIES = new Set([
@@ -1021,14 +1005,12 @@ export function handleVerifyLmgSummary(req: Request, res: Response): void {
     const V_OVERRIDE: Record<string, string> = { '10255002': 'Tomorrow' };
 
     // Customer type map
-    const ctRows2 = db.prepare('SELECT counterparty_no, customer_type FROM customer_types')
-      .all() as Array<{ counterparty_no: string; customer_type: string }>;
-    const ctMap2 = new Map(ctRows2.map((r) => [r.counterparty_no.trim(), r.customer_type]));
+    const { rows: ctRows2 } = await pool.query('SELECT counterparty_no, customer_type FROM customer_types');
+    const ctMap2 = new Map((ctRows2 as Array<{ counterparty_no: string; customer_type: string }>).map((r) => [r.counterparty_no.trim(), r.customer_type]));
 
     // Maturity overrides
-    const moRows2 = db.prepare('SELECT ac_code, formula_type, formula_params FROM maturity_overrides')
-      .all() as Array<{ ac_code: string; formula_type: string; formula_params: string | null }>;
-    const moMap2 = new Map(moRows2.map((r) => [(r.ac_code ?? '').trim(), r]));
+    const { rows: moRows2 } = await pool.query('SELECT ac_code, formula_type, formula_params FROM maturity_overrides');
+    const moMap2 = new Map((moRows2 as Array<{ ac_code: string; formula_type: string; formula_params: string | null }>).map((r) => [(r.ac_code ?? '').trim(), r]));
 
     // Bucket boundaries (same as column-l endpoint)
     function edate2(base: Date, months: number): Date {
@@ -1260,11 +1242,10 @@ export function handleVerifyLmgSummary(req: Request, res: Response): void {
       // P73 = LCR from '30 days CF Table(ALL)'!D119
       // Q73 = SUM(H24:K24)/SUM(H51:K51) = ratio3MLR (already computed)
       // -----------------------------------------------------------------
-      lcrPercent: (() => {
+      lcrPercent: await (async () => {
         // Inline D119 computation — same logic as CF Table endpoint
-        const arRows3 = db.prepare('SELECT p_key, assumption_rate FROM assumption_rules')
-          .all() as Array<{ p_key: string; assumption_rate: number }>;
-        const arMap3 = new Map(arRows3.map((r) => [r.p_key.trim(), r.assumption_rate]));
+        const { rows: arRows3 } = await pool.query('SELECT p_key, assumption_rate FROM assumption_rules');
+        const arMap3 = new Map((arRows3 as Array<{ p_key: string; assumption_rate: number }>).map((r) => [r.p_key.trim(), r.assumption_rate]));
 
         const day30Str3 = (() => {
           const d = new Date(reportDate + 'T12:00:00Z');
@@ -1340,10 +1321,9 @@ export function handleVerifyLmgSummary(req: Request, res: Response): void {
     try {
       // lcrPercent was computed inline in the response IIFE — recompute as percentage for DB
       // The IIFE returned raw ratio (e.g. 0.7734). DB stores as percentage (77.34).
-      const lcrPercentForDb = (() => {
-        const arRows3 = db.prepare('SELECT p_key, assumption_rate FROM assumption_rules')
-          .all() as Array<{ p_key: string; assumption_rate: number }>;
-        const arMap3 = new Map(arRows3.map((r) => [r.p_key.trim(), r.assumption_rate]));
+      const lcrPercentForDb = await (async () => {
+        const { rows: arRows3 } = await pool.query('SELECT p_key, assumption_rate FROM assumption_rules');
+        const arMap3 = new Map((arRows3 as Array<{ p_key: string; assumption_rate: number }>).map((r) => [r.p_key.trim(), r.assumption_rate]));
         const day30End = (() => { const d = new Date(reportDate + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + 30); return d.toISOString().substring(0, 10); })();
         const is30 = (s: string) => s === 'Tomorrow' || (s >= reportDate && s <= day30End);
         const cS = (ac: string, md: string | null) => { const mo = moMap2.get(ac); if (mo) return resolveOverride2(mo.formula_type, mo.formula_params); if (!md || md < reportDate) return 'Tomorrow'; return md; };
@@ -1368,14 +1348,13 @@ export function handleVerifyLmgSummary(req: Request, res: Response): void {
         return net > 0 ? (Math.round(hq) / net) * 100 : null;
       })();
 
-      const { v4: uuidv4 } = require('uuid') as { v4: () => string };
-      const existing = db.prepare('SELECT id FROM report_summaries WHERE report_run_id = ?').get(runId) as { id: string } | undefined;
-      if (existing) {
-        db.prepare('UPDATE report_summaries SET lcr_ratio = ?, ratio_7d = ?, ratio_1m = ?, ratio_3m = ?, ratio_3m_lr = ? WHERE report_run_id = ?')
-          .run(lcrPercentForDb, ratio7D, ratio1M, ratio3M, ratio3MLR, runId);
+      const { rows: _lmgExist } = await pool.query('SELECT id FROM report_summaries WHERE report_run_id = $1', [runId]);
+      if (_lmgExist.length > 0) {
+        await pool.query('UPDATE report_summaries SET lcr_ratio = $1, ratio_7d = $2, ratio_1m = $3, ratio_3m = $4, ratio_3m_lr = $5 WHERE report_run_id = $6',
+          [lcrPercentForDb, ratio7D, ratio1M, ratio3M, ratio3MLR, runId]);
       } else {
-        db.prepare(`INSERT INTO report_summaries (id, report_run_id, report_date, eligible_hqla, gross_outflows, gross_inflows, capped_inflows, net_cash_outflows, lcr_ratio, ratio_7d, ratio_1m, ratio_3m, ratio_3m_lr, created_at) VALUES (?, ?, ?, 0, 0, 0, 0, 0, ?, ?, ?, ?, ?, datetime('now'))`)
-          .run(uuidv4(), runId, reportDate, lcrPercentForDb, ratio7D, ratio1M, ratio3M, ratio3MLR);
+        await pool.query(`INSERT INTO report_summaries (id, report_run_id, report_date, eligible_hqla, gross_outflows, gross_inflows, capped_inflows, net_cash_outflows, lcr_ratio, ratio_7d, ratio_1m, ratio_3m, ratio_3m_lr, created_at) VALUES ($1, $2, $3, 0, 0, 0, 0, 0, $4, $5, $6, $7, $8, $9)`,
+          [uuidv4(), runId, reportDate, lcrPercentForDb, ratio7D, ratio1M, ratio3M, ratio3MLR, new Date().toISOString()]);
       }
     } catch (e) {
       console.warn('[LMG] Failed to persist summary:', e);
@@ -1392,7 +1371,7 @@ export function handleVerifyLmgSummary(req: Request, res: Response): void {
 // All rows, columns L through AH. Read-only, no aggregation.
 // ---------------------------------------------------------------------------
 
-export function handleDebugBsRe33(req: Request, res: Response): void {
+export async function handleDebugBsRe33(req: Request, res: Response): Promise<void> {
   const { runId, page, pageSize } = req.query as {
     runId?: string; page?: string; pageSize?: string;
   };
@@ -1402,11 +1381,11 @@ export function handleDebugBsRe33(req: Request, res: Response): void {
   }
 
   try {
-    loadReferenceDataFromDb();
-    const db = getDb();
+    await loadReferenceDataFromDb();
+    const pool = getPool();
 
-    const runMeta = db.prepare('SELECT report_date FROM report_runs WHERE id = ?').get(runId) as
-      { report_date: string } | undefined;
+    const { rows: _rmRows } = await pool.query('SELECT report_date FROM report_runs WHERE id = $1', [runId]);
+    const runMeta = _rmRows[0] as { report_date: string } | undefined;
     if (!runMeta) {
       res.status(404).json({ success: false, error: 'Run not found' });
       return;
@@ -1415,23 +1394,20 @@ export function handleDebugBsRe33(req: Request, res: Response): void {
     const p  = parseInt(page     ?? '1',   10);
     const ps = parseInt(pageSize ?? '100', 10);
 
-    const total = (db.prepare(
-      'SELECT COUNT(*) AS cnt FROM raw_rows WHERE report_run_id = ?'
-    ).get(runId) as { cnt: number }).cnt;
+    const { rows: _cntRows } = await pool.query(
+      'SELECT COUNT(*) AS cnt FROM raw_rows WHERE report_run_id = $1', [runId]
+    );
+    const total = parseInt(_cntRows[0].cnt, 10);
     const offset = (p - 1) * ps;
 
-    const rawDbRows = db.prepare(`
+    const { rows: rawDbRows } = await pool.query(`
       SELECT row_number, ac_code, ac_name, ref_no, counterparty_no,
              base_ccy_amt, maturity_date
       FROM raw_rows
-      WHERE report_run_id = ?
+      WHERE report_run_id = $1
       ORDER BY row_number
-      LIMIT ? OFFSET ?
-    `).all(runId, ps, offset) as Array<{
-      row_number: number; ac_code: string | null; ac_name: string | null;
-      ref_no: string | null; counterparty_no: string | null;
-      base_ccy_amt: number | null; maturity_date: string | null;
-    }>;
+      LIMIT $2 OFFSET $3
+    `, [runId, ps, offset]);
 
     // --- Reference data (same as column-l/gap-forecast) ---
     const N_OVERRIDE_REFNOS = new Set(['RCH3001AUD', 'RCH3002AUD', 'RCH4001USD']);
@@ -1447,17 +1423,14 @@ export function handleDebugBsRe33(req: Request, res: Response): void {
     ]);
     const V_OVERRIDE: Record<string, string> = { '10255002': 'Tomorrow' };
 
-    const ctRows2 = db.prepare('SELECT counterparty_no, customer_type FROM customer_types')
-      .all() as Array<{ counterparty_no: string; customer_type: string }>;
-    const ctMap = new Map(ctRows2.map((r) => [r.counterparty_no.trim(), r.customer_type]));
+    const { rows: ctRows2 } = await pool.query('SELECT counterparty_no, customer_type FROM customer_types');
+    const ctMap = new Map((ctRows2 as Array<{ counterparty_no: string; customer_type: string }>).map((r) => [r.counterparty_no.trim(), r.customer_type]));
 
-    const arRows2 = db.prepare('SELECT p_key, assumption_rate FROM assumption_rules')
-      .all() as Array<{ p_key: string; assumption_rate: number }>;
-    const arMap = new Map(arRows2.map((r) => [r.p_key.trim(), r.assumption_rate]));
+    const { rows: arRows2 } = await pool.query('SELECT p_key, assumption_rate FROM assumption_rules');
+    const arMap = new Map((arRows2 as Array<{ p_key: string; assumption_rate: number }>).map((r) => [r.p_key.trim(), r.assumption_rate]));
 
-    const moRows2 = db.prepare('SELECT ac_code, formula_type, formula_params FROM maturity_overrides')
-      .all() as Array<{ ac_code: string; formula_type: string; formula_params: string | null }>;
-    const moMap = new Map(moRows2.map((r) => [(r.ac_code ?? '').trim(), r]));
+    const { rows: moRows2 } = await pool.query('SELECT ac_code, formula_type, formula_params FROM maturity_overrides');
+    const moMap = new Map((moRows2 as Array<{ ac_code: string; formula_type: string; formula_params: string | null }>).map((r) => [(r.ac_code ?? '').trim(), r]));
 
     // --- S-column helpers ---
     function eomonthL(dateStr: string, months: number): string {
@@ -1617,23 +1590,23 @@ export function handleDebugBsRe33(req: Request, res: Response): void {
 // Replicates Excel rows 97-119: Outflow, Buyback, Inflow, LCR.
 // ---------------------------------------------------------------------------
 
-export function handleVerifyCfTable(req: Request, res: Response): void {
+export async function handleVerifyCfTable(req: Request, res: Response): Promise<void> {
   const { runId } = req.query as { runId?: string };
   if (!runId) {
     res.status(400).json({ success: false, error: 'Provide ?runId=<id>' });
     return;
   }
-  if (!canAccessRun(runId, req)) {
+  if (!await canAccessRun(runId, req)) {
     res.status(403).json({ success: false, error: 'Access denied.' });
     return;
   }
 
   try {
-    loadReferenceDataFromDb();
-    const db = getDb();
+    await loadReferenceDataFromDb();
+    const pool = getPool();
 
-    const runMeta = db.prepare('SELECT report_date FROM report_runs WHERE id = ?').get(runId) as
-      { report_date: string } | undefined;
+    const { rows: _rmRows } = await pool.query('SELECT report_date FROM report_runs WHERE id = $1', [runId]);
+    const runMeta = _rmRows[0] as { report_date: string } | undefined;
     if (!runMeta) {
       res.status(404).json({ success: false, error: 'Run not found' });
       return;
@@ -1659,17 +1632,14 @@ export function handleVerifyCfTable(req: Request, res: Response): void {
       '20920018','20920019','20920021','20920022','20920023','20920024','20920025',
     ]);
 
-    const ctRows = db.prepare('SELECT counterparty_no, customer_type FROM customer_types')
-      .all() as Array<{ counterparty_no: string; customer_type: string }>;
-    const ctMap = new Map(ctRows.map((r) => [r.counterparty_no.trim(), r.customer_type]));
+    const { rows: ctRows } = await pool.query('SELECT counterparty_no, customer_type FROM customer_types');
+    const ctMap = new Map((ctRows as Array<{ counterparty_no: string; customer_type: string }>).map((r) => [r.counterparty_no.trim(), r.customer_type]));
 
-    const arRows = db.prepare('SELECT p_key, assumption_rate FROM assumption_rules')
-      .all() as Array<{ p_key: string; assumption_rate: number }>;
-    const arMap = new Map(arRows.map((r) => [r.p_key.trim(), r.assumption_rate]));
+    const { rows: arRows } = await pool.query('SELECT p_key, assumption_rate FROM assumption_rules');
+    const arMap = new Map((arRows as Array<{ p_key: string; assumption_rate: number }>).map((r) => [r.p_key.trim(), r.assumption_rate]));
 
-    const moRows = db.prepare('SELECT ac_code, formula_type, formula_params FROM maturity_overrides')
-      .all() as Array<{ ac_code: string; formula_type: string; formula_params: string | null }>;
-    const moMap = new Map(moRows.map((r) => [(r.ac_code ?? '').trim(), r]));
+    const { rows: moRows } = await pool.query('SELECT ac_code, formula_type, formula_params FROM maturity_overrides');
+    const moMap = new Map((moRows as Array<{ ac_code: string; formula_type: string; formula_params: string | null }>).map((r) => [(r.ac_code ?? '').trim(), r]));
 
     // S-column helpers (LCR maturity — same as column-l endpoint)
     function eomonthLocal(dateStr: string, months: number): string {
@@ -1710,14 +1680,10 @@ export function handleVerifyCfTable(req: Request, res: Response): void {
     }
 
     // Fetch all raw rows
-    const rawDbRows = db.prepare(`
+    const { rows: rawDbRows } = await pool.query(`
       SELECT ac_code, ref_no, counterparty_no, base_ccy_amt, maturity_date
-      FROM raw_rows WHERE report_run_id = ?
-    `).all(runId) as Array<{
-      ac_code: string | null; ref_no: string | null;
-      counterparty_no: string | null; base_ccy_amt: number | null;
-      maturity_date: string | null;
-    }>;
+      FROM raw_rows WHERE report_run_id = $1
+    `, [runId]);
 
     // Per-pKey accumulation for the CF table rows.
     // K = SUM(daily_Q) * rate — sum raw Q first, then multiply by rate, then round.
@@ -1880,7 +1846,7 @@ export function handleVerifyCfTable(req: Request, res: Response): void {
 // and Excel-formatted string for every cell.
 // ---------------------------------------------------------------------------
 
-export function handleDebugRawCells(req: Request, res: Response): void {
+export async function handleDebugRawCells(req: Request, res: Response): Promise<void> {
   const file = req.file;
   if (!file) {
     res.status(400).json({ success: false, error: 'No file uploaded.' });
@@ -1950,40 +1916,36 @@ export function handleDebugRawCells(req: Request, res: Response): void {
   }
 }
 
-export function handleGetAccountMappings(req: Request, res: Response): void {
+export async function handleGetAccountMappings(req: Request, res: Response): Promise<void> {
   const { page, pageSize, search } = req.query as { page?: string; pageSize?: string; search?: string };
 
   try {
-    const db = getDb();
+    const pool = getPool();
     const p  = parseInt(page     ?? '1',  10);
     const ps = parseInt(pageSize ?? '50', 10);
 
     const hasSearch = search && search.trim().length > 0;
     const searchPattern = hasSearch ? `%${search.trim()}%` : null;
 
-    const whereClause = hasSearch
-      ? 'WHERE ac_code LIKE ? OR ac_name LIKE ?'
-      : '';
     const whereParams = hasSearch ? [searchPattern, searchPattern] : [];
+    const whereClause = hasSearch ? 'WHERE ac_code LIKE $1 OR ac_name LIKE $2' : '';
 
-    const total = (db.prepare(
-      `SELECT COUNT(*) AS cnt FROM account_mappings ${whereClause}`
-    ).get(...whereParams) as { cnt: number }).cnt;
+    const { rows: _amcntRows } = await pool.query(
+      `SELECT COUNT(*) AS cnt FROM account_mappings ${whereClause}`,
+      whereParams
+    );
+    const total = parseInt(_amcntRows[0].cnt, 10);
 
     const offset = (p - 1) * ps;
 
-    const rows = db.prepare(`
+    const { rows: _amRows } = await pool.query(`
       SELECT id, ac_code, ac_name, category, middle_category,
              hqla_or_cashflow_type, asset_liability_type
       FROM account_mappings
       ${whereClause}
       ORDER BY ac_code
-      LIMIT ? OFFSET ?
-    `).all(...whereParams, ps, offset) as Array<{
-      id: number; ac_code: string; ac_name: string | null; category: string | null;
-      middle_category: string | null; hqla_or_cashflow_type: string | null;
-      asset_liability_type: string | null;
-    }>;
+      LIMIT $${whereParams.length + 1} OFFSET $${whereParams.length + 2}
+    `, [...whereParams, ps, offset]);
 
     res.json({
       success:    true,
@@ -1991,7 +1953,7 @@ export function handleGetAccountMappings(req: Request, res: Response): void {
       pageSize:   ps,
       total,
       totalPages: Math.ceil(total / ps),
-      rows: rows.map((r) => ({
+      rows: _amRows.map((r) => ({
         id:                 r.id,
         acCode:             r.ac_code,
         acName:             r.ac_name             ?? '',
@@ -2011,19 +1973,23 @@ export function handleGetAccountMappings(req: Request, res: Response): void {
 // Account Mapping — DISTINCT values for dropdown options
 // ---------------------------------------------------------------------------
 
-export function handleGetAccountMappingDistinct(_req: Request, res: Response): void {
+export async function handleGetAccountMappingDistinct(_req: Request, res: Response): Promise<void> {
   try {
-    const db = getDb();
+    const pool = getPool();
 
-    const queryDistinct = (col: string): string[] =>
-      (db.prepare(`SELECT DISTINCT ${col} AS v FROM account_mappings WHERE ${col} IS NOT NULL AND ${col} != '' ORDER BY ${col}`).all() as Array<{ v: string }>).map((r) => r.v);
+    async function queryDistinct(col: string): Promise<string[]> {
+      const { rows } = await pool.query(
+        `SELECT DISTINCT ${col} AS v FROM account_mappings WHERE ${col} IS NOT NULL AND ${col} != '' ORDER BY ${col}`
+      );
+      return (rows as Array<{ v: string }>).map((r) => r.v);
+    }
 
     res.json({
       success: true,
-      category:           queryDistinct('category'),
-      middleCategory:     queryDistinct('middle_category'),
-      hqlaOrCashflowType: queryDistinct('hqla_or_cashflow_type'),
-      assetLiabilityType: queryDistinct('asset_liability_type'),
+      category:           await queryDistinct('category'),
+      middleCategory:     await queryDistinct('middle_category'),
+      hqlaOrCashflowType: await queryDistinct('hqla_or_cashflow_type'),
+      assetLiabilityType: await queryDistinct('asset_liability_type'),
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -2035,7 +2001,7 @@ export function handleGetAccountMappingDistinct(_req: Request, res: Response): v
 // Account Mapping — CREATE
 // ---------------------------------------------------------------------------
 
-export function handleCreateAccountMapping(req: Request, res: Response): void {
+export async function handleCreateAccountMapping(req: Request, res: Response): Promise<void> {
   try {
     const { acCode, acName, category, middleCategory, hqlaOrCashflowType, assetLiabilityType } = req.body as {
       acCode: string; acName?: string; category?: string;
@@ -2047,27 +2013,28 @@ export function handleCreateAccountMapping(req: Request, res: Response): void {
       return;
     }
 
-    const db = getDb();
+    const pool = getPool();
 
-    const result = db.prepare(`
+    const { rows: _insRows } = await pool.query(`
       INSERT INTO account_mappings (ac_code, ac_name, category, middle_category, hqla_or_cashflow_type, asset_liability_type)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(
+      VALUES ($1, $2, $3, $4, $5, $6)
+      RETURNING id
+    `, [
       acCode.trim(),
       acName ?? null,
       category ?? null,
       middleCategory ?? null,
       hqlaOrCashflowType ?? null,
       assetLiabilityType ?? null,
-    );
+    ]);
 
     res.json({
       success: true,
-      id: result.lastInsertRowid,
+      id: _insRows[0].id,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    const status = msg.includes('UNIQUE constraint') ? 409 : 500;
+    const status = (err as any).code === '23505' ? 409 : 500;
     res.status(status).json({ success: false, error: msg });
   }
 }
@@ -2076,7 +2043,7 @@ export function handleCreateAccountMapping(req: Request, res: Response): void {
 // Account Mapping — UPDATE
 // ---------------------------------------------------------------------------
 
-export function handleUpdateAccountMapping(req: Request, res: Response): void {
+export async function handleUpdateAccountMapping(req: Request, res: Response): Promise<void> {
   try {
     const id = parseInt(req.params.id, 10);
     if (isNaN(id)) {
@@ -2094,14 +2061,14 @@ export function handleUpdateAccountMapping(req: Request, res: Response): void {
       return;
     }
 
-    const db = getDb();
+    const pool = getPool();
 
-    const result = db.prepare(`
+    const { rowCount: _updCount } = await pool.query(`
       UPDATE account_mappings
-      SET ac_code = ?, ac_name = ?, category = ?, middle_category = ?,
-          hqla_or_cashflow_type = ?, asset_liability_type = ?
-      WHERE id = ?
-    `).run(
+      SET ac_code = $1, ac_name = $2, category = $3, middle_category = $4,
+          hqla_or_cashflow_type = $5, asset_liability_type = $6
+      WHERE id = $7
+    `, [
       acCode.trim(),
       acName ?? null,
       category ?? null,
@@ -2109,9 +2076,9 @@ export function handleUpdateAccountMapping(req: Request, res: Response): void {
       hqlaOrCashflowType ?? null,
       assetLiabilityType ?? null,
       id,
-    );
+    ]);
 
-    if (result.changes === 0) {
+    if (_updCount === 0) {
       res.status(404).json({ success: false, error: 'Mapping not found' });
       return;
     }
@@ -2119,7 +2086,7 @@ export function handleUpdateAccountMapping(req: Request, res: Response): void {
     res.json({ success: true });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    const status = msg.includes('UNIQUE constraint') ? 409 : 500;
+    const status = (err as any).code === '23505' ? 409 : 500;
     res.status(status).json({ success: false, error: msg });
   }
 }
@@ -2128,7 +2095,7 @@ export function handleUpdateAccountMapping(req: Request, res: Response): void {
 // Account Mapping — DELETE
 // ---------------------------------------------------------------------------
 
-export function handleDeleteAccountMapping(req: Request, res: Response): void {
+export async function handleDeleteAccountMapping(req: Request, res: Response): Promise<void> {
   try {
     const id = parseInt(req.params.id, 10);
     if (isNaN(id)) {
@@ -2136,10 +2103,10 @@ export function handleDeleteAccountMapping(req: Request, res: Response): void {
       return;
     }
 
-    const db = getDb();
-    const result = db.prepare('DELETE FROM account_mappings WHERE id = ?').run(id);
+    const pool = getPool();
+    const { rowCount: _delCount } = await pool.query('DELETE FROM account_mappings WHERE id = $1', [id]);
 
-    if (result.changes === 0) {
+    if (_delCount === 0) {
       res.status(404).json({ success: false, error: 'Mapping not found' });
       return;
     }
@@ -2158,23 +2125,23 @@ export function handleDeleteAccountMapping(req: Request, res: Response): void {
 // each month: for month M, window = [M_start, M_start + 30 days].
 // ---------------------------------------------------------------------------
 
-export function handleLcrForecast(req: Request, res: Response): void {
+export async function handleLcrForecast(req: Request, res: Response): Promise<void> {
   const { runId } = req.query as { runId?: string };
   if (!runId) {
     res.status(400).json({ success: false, error: 'Provide ?runId=<id>' });
     return;
   }
-  if (!canAccessRun(runId, req)) {
+  if (!await canAccessRun(runId, req)) {
     res.status(403).json({ success: false, error: 'Access denied.' });
     return;
   }
 
   try {
-    loadReferenceDataFromDb();
-    const db = getDb();
+    await loadReferenceDataFromDb();
+    const pool = getPool();
 
-    const runMeta = db.prepare('SELECT report_date FROM report_runs WHERE id = ?').get(runId) as
-      { report_date: string } | undefined;
+    const { rows: _rmRows } = await pool.query('SELECT report_date FROM report_runs WHERE id = $1', [runId]);
+    const runMeta = _rmRows[0] as { report_date: string } | undefined;
     if (!runMeta) {
       res.status(404).json({ success: false, error: 'Run not found' });
       return;
@@ -2199,17 +2166,14 @@ export function handleLcrForecast(req: Request, res: Response): void {
       'Bond issued': 0.05,
     };
 
-    const ctRows = db.prepare('SELECT counterparty_no, customer_type FROM customer_types')
-      .all() as Array<{ counterparty_no: string; customer_type: string }>;
-    const ctMap = new Map(ctRows.map((r) => [r.counterparty_no.trim(), r.customer_type]));
+    const { rows: ctRows } = await pool.query('SELECT counterparty_no, customer_type FROM customer_types');
+    const ctMap = new Map((ctRows as Array<{ counterparty_no: string; customer_type: string }>).map((r) => [r.counterparty_no.trim(), r.customer_type]));
 
-    const arRows = db.prepare('SELECT p_key, assumption_rate FROM assumption_rules')
-      .all() as Array<{ p_key: string; assumption_rate: number }>;
-    const arMap = new Map(arRows.map((r) => [r.p_key.trim(), r.assumption_rate]));
+    const { rows: arRows } = await pool.query('SELECT p_key, assumption_rate FROM assumption_rules');
+    const arMap = new Map((arRows as Array<{ p_key: string; assumption_rate: number }>).map((r) => [r.p_key.trim(), r.assumption_rate]));
 
-    const moRows = db.prepare('SELECT ac_code, formula_type, formula_params FROM maturity_overrides')
-      .all() as Array<{ ac_code: string; formula_type: string; formula_params: string | null }>;
-    const moMap = new Map(moRows.map((r) => [(r.ac_code ?? '').trim(), r]));
+    const { rows: moRows } = await pool.query('SELECT ac_code, formula_type, formula_params FROM maturity_overrides');
+    const moMap = new Map((moRows as Array<{ ac_code: string; formula_type: string; formula_params: string | null }>).map((r) => [(r.ac_code ?? '').trim(), r]));
 
     // Date helpers
     function eomonthLC(dateStr: string, months: number): string {
@@ -2244,14 +2208,10 @@ export function handleLcrForecast(req: Request, res: Response): void {
     }
 
     // Fetch all raw rows and pre-compute per-row classification
-    const rawDbRows = db.prepare(`
+    const { rows: rawDbRows } = await pool.query(`
       SELECT ac_code, ref_no, counterparty_no, base_ccy_amt, maturity_date
-      FROM raw_rows WHERE report_run_id = ?
-    `).all(runId) as Array<{
-      ac_code: string | null; ref_no: string | null;
-      counterparty_no: string | null; base_ccy_amt: number | null;
-      maturity_date: string | null;
-    }>;
+      FROM raw_rows WHERE report_run_id = $1
+    `, [runId]);
 
     const enriched = rawDbRows.map((r) => {
       const ac = (r.ac_code ?? '').trim();
@@ -2437,20 +2397,20 @@ export function handleLcrForecast(req: Request, res: Response): void {
 // Returns IRRBB data stored at upload time from the Summary_IRRBB sheet.
 // ---------------------------------------------------------------------------
 
-export function handleIrrbb(req: Request, res: Response): void {
+export async function handleIrrbb(req: Request, res: Response): Promise<void> {
   const { runId } = req.query as { runId?: string };
   if (!runId) {
     res.status(400).json({ success: false, error: 'Provide ?runId=<id>' });
     return;
   }
-  if (!canAccessRun(runId, req)) {
+  if (!await canAccessRun(runId, req)) {
     res.status(403).json({ success: false, error: 'Access denied.' });
     return;
   }
   try {
-    const db = getDb();
-    const row = db.prepare('SELECT irrbb_data FROM report_runs WHERE id = ?').get(runId) as
-      { irrbb_data: string | null } | undefined;
+    const pool = getPool();
+    const { rows: _irrRows } = await pool.query('SELECT irrbb_data FROM report_runs WHERE id = $1', [runId]);
+    const row = _irrRows[0] as { irrbb_data: string | null } | undefined;
     if (!row) {
       res.status(404).json({ success: false, error: 'Run not found' });
       return;

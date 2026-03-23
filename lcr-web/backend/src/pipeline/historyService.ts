@@ -10,7 +10,7 @@
  *  - getProcessedRows(runId) → processed row details (debug use)
  */
 
-import { getDb } from '../db/client';
+import { getPool } from '../db/client';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -52,10 +52,10 @@ export interface HistoryListItem {
 // List available report dates
 // ---------------------------------------------------------------------------
 
-export function listReportDates(): HistoryListItem[] {
-  const db = getDb();
+export async function listReportDates(): Promise<HistoryListItem[]> {
+  const pool = getPool();
 
-  const rows = db.prepare(`
+  const { rows } = await pool.query(`
     SELECT
       rr.id              AS run_id,
       rr.report_date,
@@ -70,15 +70,15 @@ export function listReportDates(): HistoryListItem[] {
     FROM report_runs rr
     LEFT JOIN report_summaries rs ON rs.report_run_id = rr.id
     ORDER BY rr.report_date DESC, rr.uploaded_at DESC
-  `).all() as Array<{
+  `);
+
+  return (rows as Array<{
     run_id: string; report_date: string; source_filename: string;
     uploaded_at: string; status: string;
     eligible_hqla: number | null; gross_outflows: number | null;
     net_cash_outflows: number | null; lcr_ratio: number | null;
     ratio_3m_lr: number | null;
-  }>;
-
-  return rows.map((r) => ({
+  }>).map((r) => ({
     reportDate:      r.report_date,
     runId:           r.run_id,
     sourceFilename:  r.source_filename,
@@ -96,10 +96,10 @@ export function listReportDates(): HistoryListItem[] {
 // Get summary by report date (latest run for that date)
 // ---------------------------------------------------------------------------
 
-export function getSummaryByDate(reportDate: string): ReportSummaryRecord | null {
-  const db = getDb();
+export async function getSummaryByDate(reportDate: string): Promise<ReportSummaryRecord | null> {
+  const pool = getPool();
 
-  const row = db.prepare(`
+  const { rows } = await pool.query(`
     SELECT
       rs.id              AS summary_id,
       rs.report_run_id   AS run_id,
@@ -119,17 +119,18 @@ export function getSummaryByDate(reportDate: string): ReportSummaryRecord | null
       rs.created_at
     FROM report_summaries rs
     JOIN report_runs rr ON rr.id = rs.report_run_id
-    WHERE rs.report_date = ?
+    WHERE rs.report_date = $1
     ORDER BY rs.created_at DESC
     LIMIT 1
-  `).get(reportDate) as {
+  `, [reportDate]);
+
+  const row = rows[0] as {
     summary_id: string; run_id: string; report_date: string;
     source_filename: string; uploaded_at: string;
     eligible_hqla: number; gross_outflows: number; gross_inflows: number;
     capped_inflows: number; net_cash_outflows: number; lcr_ratio: number | null;
     ratio_7d: number | null; ratio_1m: number | null; ratio_3m: number | null;
-    ratio_3m_lr: number | null;
-    created_at: string;
+    ratio_3m_lr: number | null; created_at: string;
   } | undefined;
 
   if (!row) return null;
@@ -158,10 +159,10 @@ export function getSummaryByDate(reportDate: string): ReportSummaryRecord | null
 // Get summary by run ID
 // ---------------------------------------------------------------------------
 
-export function getSummaryByRunId(runId: string): ReportSummaryRecord | null {
-  const db = getDb();
+export async function getSummaryByRunId(runId: string): Promise<ReportSummaryRecord | null> {
+  const pool = getPool();
 
-  const row = db.prepare(`
+  const { rows } = await pool.query(`
     SELECT
       rs.id              AS summary_id,
       rs.report_run_id   AS run_id,
@@ -181,9 +182,10 @@ export function getSummaryByRunId(runId: string): ReportSummaryRecord | null {
       rs.created_at
     FROM report_summaries rs
     JOIN report_runs rr ON rr.id = rs.report_run_id
-    WHERE rs.report_run_id = ?
-  `).get(runId) as any | undefined;
+    WHERE rs.report_run_id = $1
+  `, [runId]);
 
+  const row = rows[0] as any | undefined;
   if (!row) return null;
 
   return {
@@ -226,40 +228,42 @@ export interface RawRowRecord {
   nextInterestResetDate: string | null;
 }
 
-export function getRawRows(
+export async function getRawRows(
   runId: string,
   page = 1,
   pageSize = 100,
-): { rows: RawRowRecord[]; total: number } {
-  const db = getDb();
+): Promise<{ rows: RawRowRecord[]; total: number }> {
+  const pool = getPool();
 
-  const total = (db.prepare(
-    'SELECT COUNT(*) AS cnt FROM raw_rows WHERE report_run_id = ?'
-  ).get(runId) as { cnt: number }).cnt;
+  const { rows: countRows } = await pool.query(
+    'SELECT COUNT(*) AS cnt FROM raw_rows WHERE report_run_id = $1',
+    [runId]
+  );
+  const total = parseInt(countRows[0].cnt, 10);
 
   const offset = (page - 1) * pageSize;
 
-  const rows = db.prepare(`
+  const { rows } = await pool.query(`
     SELECT
       id, row_number, ac_code, ac_name, ref_no,
       counterparty_no, counterparty_name, ccy,
       balance_amt, base_ccy_amt,
       approval_contract_date, maturity_date, next_interest_reset_date
     FROM raw_rows
-    WHERE report_run_id = ?
+    WHERE report_run_id = $1
     ORDER BY row_number
-    LIMIT ? OFFSET ?
-  `).all(runId, pageSize, offset) as Array<{
-    id: number; row_number: number; ac_code: string | null; ac_name: string | null;
-    ref_no: string | null; counterparty_no: string | null; counterparty_name: string | null;
-    ccy: string | null; balance_amt: number | null; base_ccy_amt: number | null;
-    approval_contract_date: string | null; maturity_date: string | null;
-    next_interest_reset_date: string | null;
-  }>;
+    LIMIT $2 OFFSET $3
+  `, [runId, pageSize, offset]);
 
   return {
     total,
-    rows: rows.map((r) => ({
+    rows: (rows as Array<{
+      id: number; row_number: number; ac_code: string | null; ac_name: string | null;
+      ref_no: string | null; counterparty_no: string | null; counterparty_name: string | null;
+      ccy: string | null; balance_amt: number | null; base_ccy_amt: number | null;
+      approval_contract_date: string | null; maturity_date: string | null;
+      next_interest_reset_date: string | null;
+    }>).map((r) => ({
       id:                    r.id,
       rowNumber:             r.row_number,
       acCode:                r.ac_code,
@@ -304,20 +308,22 @@ export interface ProcessedRowRecord {
   warningReason:       string | null;
 }
 
-export function getProcessedRows(
+export async function getProcessedRows(
   runId: string,
   page = 1,
   pageSize = 100,
-): { rows: ProcessedRowRecord[]; total: number } {
-  const db = getDb();
+): Promise<{ rows: ProcessedRowRecord[]; total: number }> {
+  const pool = getPool();
 
-  const total = (db.prepare(
-    'SELECT COUNT(*) AS cnt FROM processed_rows WHERE report_run_id = ?'
-  ).get(runId) as { cnt: number }).cnt;
+  const { rows: countRows } = await pool.query(
+    'SELECT COUNT(*) AS cnt FROM processed_rows WHERE report_run_id = $1',
+    [runId]
+  );
+  const total = parseInt(countRows[0].cnt, 10);
 
   const offset = (page - 1) * pageSize;
 
-  const rows = db.prepare(`
+  const { rows } = await pool.query(`
     SELECT
       pr.id, rr.row_number, rr.ac_code, rr.ac_name,
       pr.category, pr.middle_category, pr.customer_type,
@@ -328,22 +334,22 @@ export function getProcessedRows(
       pr.warning_flag, pr.warning_reason
     FROM processed_rows pr
     JOIN raw_rows rr ON rr.id = pr.raw_row_id
-    WHERE pr.report_run_id = ?
+    WHERE pr.report_run_id = $1
     ORDER BY rr.row_number
-    LIMIT ? OFFSET ?
-  `).all(runId, pageSize, offset) as Array<{
-    id: number; row_number: number; ac_code: string | null; ac_name: string | null;
-    category: string | null; middle_category: string | null; customer_type: string | null;
-    assumption_rate: number | null; adjusted_amount: number | null; weighted_amount: number | null;
-    is_hqla: number; hqla_level: string | null;
-    effective_maturity: string | null; days_to_maturity: number | null; maturity_bucket: string | null;
-    in_30d_window: number; is_cash_inflow: number; is_cash_outflow: number;
-    warning_flag: number; warning_reason: string | null;
-  }>;
+    LIMIT $2 OFFSET $3
+  `, [runId, pageSize, offset]);
 
   return {
     total,
-    rows: rows.map((r) => ({
+    rows: (rows as Array<{
+      id: number; row_number: number; ac_code: string | null; ac_name: string | null;
+      category: string | null; middle_category: string | null; customer_type: string | null;
+      assumption_rate: number | null; adjusted_amount: number | null; weighted_amount: number | null;
+      is_hqla: number; hqla_level: string | null;
+      effective_maturity: string | null; days_to_maturity: number | null; maturity_bucket: string | null;
+      in_30d_window: number; is_cash_inflow: number; is_cash_outflow: number;
+      warning_flag: number; warning_reason: string | null;
+    }>).map((r) => ({
       id:                r.id,
       rowNumber:         r.row_number,
       acCode:            r.ac_code,

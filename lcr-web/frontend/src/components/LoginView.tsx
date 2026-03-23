@@ -44,7 +44,7 @@ export function LoginView({ onLogin }: Props) {
       <div className="card" style={{ width: '100%', maxWidth: '380px', padding: '2.5rem 2rem' }}>
         <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
           <img src={nhBankLogo} alt="NongHyup Bank" style={{ height: 48, marginBottom: '0.75rem' }} />
-          <h1 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0 }}>LCR Management</h1>
+          <h1 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0 }}>Liquidity Management</h1>
           <p style={{ fontSize: '0.82rem', color: 'var(--color-text-muted)', marginTop: '0.25rem' }}>
             Internal Use Only
           </p>

@@ -3,7 +3,6 @@ import express from 'express';
 import cors from 'cors';
 import { apiRouter } from './routes/api';
 import { authRouter } from './routes/authRoutes';
-import { getDb } from './db/client';
 import { seedReferenceData } from './db/seed';
 
 const app = express();
@@ -60,12 +59,6 @@ app.use(express.urlencoded({ extended: true }));
 app.set('trust proxy', 1);
 
 // ---------------------------------------------------------------------------
-// DB init + reference data seed (runs synchronously at startup)
-// ---------------------------------------------------------------------------
-const db = getDb();
-seedReferenceData(db);
-
-// ---------------------------------------------------------------------------
 // Test route
 // ---------------------------------------------------------------------------
 app.get('/api/cors-test', (_req, res) => {
@@ -101,12 +94,26 @@ app.use(
 );
 
 // ---------------------------------------------------------------------------
-// Start
+// Async startup: seed reference data then begin listening
 // ---------------------------------------------------------------------------
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`[lcr-web] Backend listening on http://0.0.0.0:${PORT}`);
-  console.log(`[lcr-web] CORS allowed origins: ${allowedOrigins.join(', ')}`);
-  console.log(`[lcr-web] NODE_ENV: ${process.env.NODE_ENV ?? 'development'}`);
+async function start(): Promise<void> {
+  try {
+    await seedReferenceData();
+  } catch (err) {
+    console.error('[startup] Seed failed:', err);
+    process.exit(1);
+  }
+
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`[lcr-web] Backend listening on http://0.0.0.0:${PORT}`);
+    console.log(`[lcr-web] CORS allowed origins: ${allowedOrigins.join(', ')}`);
+    console.log(`[lcr-web] NODE_ENV: ${process.env.NODE_ENV ?? 'development'}`);
+  });
+}
+
+start().catch((err) => {
+  console.error('[startup] Fatal error:', err);
+  process.exit(1);
 });
 
 export default app;
