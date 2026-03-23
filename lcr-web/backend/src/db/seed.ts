@@ -184,24 +184,21 @@ const DEMO_USERS: DemoUser[] = [
 ];
 
 function seedDemoUsers(db: Database.Database): void {
-  const check = db.prepare<[string], { id: number }>(
-    'SELECT id FROM users WHERE employee_id = ?'
-  );
-  const insert = db.prepare(
+  // Always upsert demo accounts so the known password is enforced on every
+  // startup. This prevents the production 401 that occurs when the DB already
+  // has these users from a prior boot but with a different password hash.
+  const upsert = db.prepare(
     `INSERT INTO users (employee_id, password_hash, role, must_change_password)
-     VALUES (?, ?, ?, ?)`
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(employee_id) DO UPDATE SET
+       password_hash        = excluded.password_hash,
+       must_change_password = excluded.must_change_password`
   );
 
-  let created = 0;
   for (const u of DEMO_USERS) {
-    if (check.get(u.employee_id)) continue;          // already exists — skip
-    const hash = bcrypt.hashSync(u.password, 12);
-    insert.run(u.employee_id, hash, u.role, u.must_change_password);
-    console.log(`[seed] demo user created: ${u.employee_id} (${u.role})`);
-    created++;
-  }
-  if (created === 0) {
-    console.log('[seed] demo users: all accounts already present, no changes made');
+    const hash = bcrypt.hashSync(u.password, SALT_ROUNDS);
+    upsert.run(u.employee_id, hash, u.role, u.must_change_password);
+    console.log(`[seed] demo user upserted: ${u.employee_id} (${u.role})`);
   }
 }
 
