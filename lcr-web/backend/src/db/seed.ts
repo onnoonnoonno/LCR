@@ -13,6 +13,8 @@ import bcrypt from 'bcrypt';
 
 const DATA_DIR = path.join(process.cwd(), 'src', 'reference', 'data');
 
+const SALT_ROUNDS = 12; // bcrypt cost factor — must match authRoutes.ts
+
 // ---------------------------------------------------------------------------
 // Helper: load + strip comment entries from a JSON file
 // ---------------------------------------------------------------------------
