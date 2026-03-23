@@ -9,7 +9,8 @@
  *   gap       — 7D / 1M / 3M GAP combined detail
  */
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { SYDNEY_TRIVIA } from '../constants/sydneyTrivia';
 import { UploadWithDate } from './UploadWithDate';
 import { ExpandableCard } from './ExpandableCard';
 import { IrrbbTable } from './IrrbbTable';
@@ -167,6 +168,40 @@ export function DashboardView({ view, externalRunId, onNavigate }: Props) {
   const [fcDateFrom, setFcDateFrom] = useState('');
   const [fcDateTo,   setFcDateTo]   = useState('');
   const [uploadProcessing, setUploadProcessing] = useState(false);
+  const [triviaText, setTriviaText] = useState('');
+  const triviaTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Pick a random trivia item, avoiding immediate repeat
+  function pickTrivia(current: string): string {
+    if (SYDNEY_TRIVIA.length <= 1) return SYDNEY_TRIVIA[0] ?? '';
+    let next: string;
+    do { next = SYDNEY_TRIVIA[Math.floor(Math.random() * SYDNEY_TRIVIA.length)]; }
+    while (next === current);
+    return next;
+  }
+
+  // Start / stop trivia rotation when the upload overlay opens or closes
+  useEffect(() => {
+    if (uploadProcessing) {
+      const initial = pickTrivia('');
+      setTriviaText(initial);
+      triviaTimerRef.current = setInterval(() => {
+        setTriviaText((prev) => pickTrivia(prev));
+      }, 5000);
+    } else {
+      if (triviaTimerRef.current !== null) {
+        clearInterval(triviaTimerRef.current);
+        triviaTimerRef.current = null;
+      }
+      setTriviaText('');
+    }
+    return () => {
+      if (triviaTimerRef.current !== null) {
+        clearInterval(triviaTimerRef.current);
+        triviaTimerRef.current = null;
+      }
+    };
+  }, [uploadProcessing]);
 
   // ----------------------------------------------------------
   // Data loading
@@ -343,7 +378,16 @@ export function DashboardView({ view, externalRunId, onNavigate }: Props) {
       <div className="upload-processing-overlay">
         <div className="upload-processing-card">
           <img src={nhBankLogo} className="upload-logo-spin" alt="Processing" />
-          <p className="upload-processing-text">Processing file…</p>
+          <div className="upload-status">
+            <p className="upload-status-title">파일을 분석하고 있습니다...</p>
+            <p className="upload-status-desc">현재 서버 환경에 따라 처리에 다소 시간이 걸릴 수 있습니다.</p>
+          </div>
+          {triviaText && (
+            <div className="upload-trivia">
+              <span className="upload-trivia-label">시드니 상식</span>
+              <p className="upload-trivia-text">{triviaText}</p>
+            </div>
+          )}
         </div>
       </div>
     );

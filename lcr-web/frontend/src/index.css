@@ -1358,10 +1358,66 @@ select.form-input {
   text-transform: uppercase;
 }
 
+.upload-status {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  text-align: center;
+}
+
+.upload-status-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-text, #1e293b);
+  margin: 0;
+}
+
+.upload-status-desc {
+  font-size: 0.8rem;
+  color: var(--color-text-muted, #94a3b8);
+  margin: 0;
+}
+
 @keyframes logo-3d-spin {
   0%   { transform: perspective(520px) rotateY(0deg)   rotateX(0deg); }
   25%  { transform: perspective(520px) rotateY(90deg)  rotateX(12deg); }
   50%  { transform: perspective(520px) rotateY(180deg) rotateX(0deg); }
   75%  { transform: perspective(520px) rotateY(270deg) rotateX(-12deg); }
   100% { transform: perspective(520px) rotateY(360deg) rotateX(0deg); }
+}
+
+/* ---------- Upload Processing Trivia section ------------ */
+.upload-trivia {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.45rem;
+  max-width: 320px;
+  border-top: 1px solid var(--color-border, #e5e7eb);
+  padding-top: 1.1rem;
+  margin-top: 0.25rem;
+  animation: trivia-fadein 0.5s ease;
+}
+
+.upload-trivia-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-muted, #94a3b8);
+}
+
+.upload-trivia-text {
+  font-size: 0.82rem;
+  color: var(--color-text-secondary, #475569);
+  line-height: 1.6;
+  text-align: center;
+  margin: 0;
+  animation: trivia-fadein 0.5s ease;
+}
+
+@keyframes trivia-fadein {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
