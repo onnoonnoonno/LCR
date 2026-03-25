@@ -391,7 +391,7 @@ export function DashboardView({ view, externalRunId, onNavigate }: Props) {
     if (!sections.length) return;
     setPdfExporting(true);
     try {
-      await exportSectionsToPdf(sections, `Dashboard_${reportDate || 'export'}`);
+      await exportSectionsToPdf(sections, `Dashboard_${reportDate || 'export'}`, { singlePage: true });
     } finally {
       setPdfExporting(false);
     }
@@ -1495,14 +1495,36 @@ export function DashboardView({ view, externalRunId, onNavigate }: Props) {
                       <span className={`breach-badge breach-badge--${lcrBreach.toLowerCase()}`}>{lcrBreach}</span>
                     </div>
                     <div style={{ width: 1, height: 36, background: 'var(--color-border)' }} />
-                    <button className="btn btn--ghost" style={{ whiteSpace: 'nowrap', padding: '0.4rem 0.9rem', fontSize: '0.78rem' }} onClick={handleExportLcrPdf} disabled={pdfExporting}>
-                      {pdfExporting ? 'Exporting...' : 'Export PDF'}
+                    <button
+                      className="btn btn--ghost"
+                      style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '0.35rem', borderRadius: '6px', lineHeight: 1 }}
+                      onClick={handleExportLcrPdf}
+                      disabled={pdfExporting}
+                      title="Export PDF"
+                      aria-label="Export PDF"
+                    >
+                      {pdfExporting ? (
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.5, animation: 'spin 1s linear infinite' }}><circle cx="12" cy="12" r="10" strokeDasharray="32" strokeDashoffset="12" /></svg>
+                      ) : (
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                      )}
                     </button>
                   </div>
                 ) : view === 'dashboard' ? (
                   <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                    <button className="btn btn--ghost" style={{ whiteSpace: 'nowrap', padding: '0.45rem 1rem', fontSize: '0.82rem' }} onClick={handleExportDashboardPdf} disabled={pdfExporting}>
-                      {pdfExporting ? 'Exporting...' : 'Export PDF'}
+                    <button
+                      className="btn btn--ghost"
+                      style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '0.35rem', borderRadius: '6px', lineHeight: 1 }}
+                      onClick={handleExportDashboardPdf}
+                      disabled={pdfExporting}
+                      title="Export PDF"
+                      aria-label="Export PDF"
+                    >
+                      {pdfExporting ? (
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.5, animation: 'spin 1s linear infinite' }}><circle cx="12" cy="12" r="10" strokeDasharray="32" strokeDashoffset="12" /></svg>
+                      ) : (
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                      )}
                     </button>
                     <button className="btn btn--primary" style={{ whiteSpace: 'nowrap', padding: '0.5rem 1.25rem', fontSize: '0.9rem' }} onClick={() => setShowUpload(true)}>Upload New File</button>
                   </div>

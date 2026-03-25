@@ -1465,3 +1465,51 @@ select.form-input {
   from { opacity: 0; transform: translateY(4px); }
   to   { opacity: 1; transform: translateY(0); }
 }
+
+/* ============================================================
+   PDF Export Mode — temporary tighter spacing during capture.
+   Applied to <html> by pdfExport.ts, removed immediately after.
+   ============================================================ */
+.pdf-export-mode .card {
+  padding: 0.6rem 0.8rem;
+  border-radius: 4px;
+}
+.pdf-export-mode .kpi-grid {
+  gap: 0.4rem;
+  margin-bottom: 0.5rem;
+}
+.pdf-export-mode .kpi-card {
+  padding: 0.45rem 0.6rem;
+}
+.pdf-export-mode .kpi-card__value {
+  font-size: 1.4rem;
+}
+.pdf-export-mode .summary-table--lg th,
+.pdf-export-mode .summary-table--lg td {
+  padding: 0.55rem 0.7rem;
+  font-size: 0.88rem;
+}
+.pdf-export-mode .summary-table--lg .summary-num-current {
+  font-size: 1.18rem;
+}
+.pdf-export-mode .summary-table--lg .summary-num-prev {
+  font-size: 1.05rem;
+}
+.pdf-export-mode .summary-table--lg .summary-num-change {
+  font-size: 0.98rem;
+}
+.pdf-export-mode .summary-table--lg .summary-num {
+  font-size: 1.0rem;
+}
+.pdf-export-mode .summary-footnotes {
+  padding: 0.4rem 0.6rem 0.4rem 1.4rem;
+  margin-top: 0.5rem;
+}
+.pdf-export-mode .summary-footnotes li {
+  font-size: 0.72rem;
+  line-height: 1.5;
+}
+.pdf-export-mode .verify-step-title {
+  font-size: 0.95rem;
+  margin-bottom: 0.4rem;
+}
