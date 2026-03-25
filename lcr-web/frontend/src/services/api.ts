@@ -186,7 +186,17 @@ export async function uploadRaw(file: File, reportDate?: string): Promise<Upload
     headers: authHeaders(),
     body: formData,
   });
-  return handleResponse<UploadRawResponse>(res);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({} as Record<string, unknown>));
+    if (body.unmappedCodes?.length || body.unmappedNames?.length) {
+      const err = new Error((body.error as string) || 'Unmapped accounts found in uploaded file.');
+      (err as any).unmappedCodes = body.unmappedCodes;
+      (err as any).unmappedNames = body.unmappedNames;
+      throw err;
+    }
+    throw new Error((body.error as string) || `HTTP ${res.status}: ${res.statusText}`);
+  }
+  return res.json() as Promise<UploadRawResponse>;
 }
 
 /** Fetch paginated raw rows for a given report run. */

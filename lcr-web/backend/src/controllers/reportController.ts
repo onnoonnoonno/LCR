@@ -82,6 +82,18 @@ export async function handleUploadAndProcess(req: Request, res: Response): Promi
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
+    if (msg.startsWith('UNMAPPED_ACCOUNTS:')) {
+      try {
+        const payload = JSON.parse(msg.replace('UNMAPPED_ACCOUNTS:', ''));
+        res.status(400).json({
+          success: false,
+          error: 'Upload cancelled: unmapped account codes or names found in uploaded file.',
+          unmappedCodes: payload.codes ?? [],
+          unmappedNames: payload.names ?? [],
+        });
+        return;
+      } catch { /* fall through to generic handler */ }
+    }
     console.error('[reportController] Upload/pipeline error:', msg);
     res.status(500).json({ success: false, error: msg });
   }
@@ -114,6 +126,18 @@ export async function handleUploadRaw(req: Request, res: Response): Promise<void
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
+    if (msg.startsWith('UNMAPPED_ACCOUNTS:')) {
+      try {
+        const payload = JSON.parse(msg.replace('UNMAPPED_ACCOUNTS:', ''));
+        res.status(400).json({
+          success: false,
+          error: 'Upload cancelled: unmapped account codes or names found in uploaded file.',
+          unmappedCodes: payload.codes ?? [],
+          unmappedNames: payload.names ?? [],
+        });
+        return;
+      } catch { /* fall through to generic handler */ }
+    }
     console.error('[reportController] Upload-raw error:', msg);
     res.status(500).json({ success: false, error: msg });
   }

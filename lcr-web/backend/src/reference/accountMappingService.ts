@@ -107,6 +107,60 @@ function getIndex(): MappingIndex {
  * @param acCode  Raw account code from the upload (string or numeric-as-string)
  * @returns       Matching AccountMapping, or null if not found
  */
+/**
+ * Returns true if the account mapping index has been built.
+ */
+export function isIndexReady(): boolean {
+  return _index !== null;
+}
+
+// ---------------------------------------------------------------------------
+// Bulk validation
+// ---------------------------------------------------------------------------
+
+/**
+ * Validate a set of raw rows against the account mapping index.
+ *
+ * For each row, checks whether `acCode` resolves via lookupAccountMapping.
+ * Also checks whether `acName` exists in any mapping entry.
+ *
+ * Returns deduplicated, sorted arrays of unmapped codes and names.
+ * Empty arrays = all valid.
+ */
+export function validateAgainstMappings(
+  rows: { acCode: string | null; acName: string | null }[]
+): { unmappedCodes: string[]; unmappedNames: string[] } {
+  const idx = getIndex();
+
+  // Build a set of all known acNames (normalised to lowercase for comparison)
+  const knownNames = new Set<string>();
+  for (const mapping of idx.values()) {
+    if (mapping.acName) knownNames.add(mapping.acName.trim().toLowerCase());
+  }
+
+  const badCodes = new Set<string>();
+  const badNames = new Set<string>();
+
+  for (const row of rows) {
+    // Check acCode via existing lookup (exact + prefix fallback)
+    if (row.acCode != null && String(row.acCode).trim() !== '') {
+      const match = lookupAccountMapping(row.acCode);
+      if (!match) badCodes.add(normalizeKey(row.acCode));
+    }
+
+    // Check acName
+    if (row.acName != null && String(row.acName).trim() !== '') {
+      const normName = String(row.acName).trim().toLowerCase();
+      if (!knownNames.has(normName)) badNames.add(String(row.acName).trim());
+    }
+  }
+
+  return {
+    unmappedCodes: Array.from(badCodes).sort(),
+    unmappedNames: Array.from(badNames).sort(),
+  };
+}
+
 export function lookupAccountMapping(acCode: string | null): AccountMapping | null {
   const idx = getIndex();
   const debug = _debugCount < DEBUG_LIMIT;

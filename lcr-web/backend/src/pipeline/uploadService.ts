@@ -14,6 +14,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { getPool } from '../db/client';
 import { parseExcelBuffer, extractReportDate } from '../services/excelParser';
 import { calculateIrrbb } from './irrbbService';
+import { isIndexReady, validateAgainstMappings } from '../reference/accountMappingService';
+import { loadReferenceDataFromDb } from './pipelineService';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -41,7 +43,19 @@ export async function uploadRawData(
   // Use manual report date if provided, otherwise extract from filename
   const reportDate = manualReportDate || extractReportDate(originalFilename);
 
-  // Create report run record
+  // Parse Excel FIRST (before any DB writes)
+  const { rows } = parseExcelBuffer(buffer);
+
+  // Validate account codes/names against the mapping list
+  if (!isIndexReady()) await loadReferenceDataFromDb();
+  const { unmappedCodes, unmappedNames } = validateAgainstMappings(rows);
+  if (unmappedCodes.length || unmappedNames.length) {
+    throw new Error(
+      `UNMAPPED_ACCOUNTS:${JSON.stringify({ codes: unmappedCodes, names: unmappedNames })}`
+    );
+  }
+
+  // Create report run record (only after validation passes)
   const runId = uuidv4();
   const now   = new Date().toISOString();
 
@@ -50,9 +64,6 @@ export async function uploadRawData(
      VALUES ($1, $2, $3, $4, 'pending', $5)`,
     [runId, reportDate, now, originalFilename, userId ?? null]
   );
-
-  // Parse Excel
-  const { rows } = parseExcelBuffer(buffer);
 
   // Store raw rows in a single transaction
   const client = await pool.connect();
