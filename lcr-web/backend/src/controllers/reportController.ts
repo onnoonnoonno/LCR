@@ -1342,43 +1342,57 @@ export async function handleVerifyLmgSummary(req: Request, res: Response): Promi
     });
 
     // Persist summary values so the History list can display them.
+    // Compute LCR components (HQLA, outflow, inflow) for storage.
     try {
-      // lcrPercent was computed inline in the response IIFE — recompute as percentage for DB
-      // The IIFE returned raw ratio (e.g. 0.7734). DB stores as percentage (77.34).
-      const lcrPercentForDb = await (async () => {
-        const { rows: arRows3 } = await pool.query('SELECT p_key, assumption_rate FROM assumption_rules');
-        const arMap3 = new Map((arRows3 as Array<{ p_key: string; assumption_rate: number }>).map((r) => [r.p_key.trim(), r.assumption_rate]));
-        const day30End = (() => { const d = new Date(reportDate + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + 30); return d.toISOString().substring(0, 10); })();
-        const is30 = (s: string) => s === 'Tomorrow' || (s >= reportDate && s <= day30End);
-        const cS = (ac: string, md: string | null) => { const mo = moMap2.get(ac); if (mo) return resolveOverride2(mo.formula_type, mo.formula_params); if (!md || md < reportDate) return 'Tomorrow'; return md; };
-        const NR = new Set(['RCH3001AUD', 'RCH3002AUD', 'RCH4001USD']);
-        const BR: Record<string, number> = { 'Deposit (Certificate of Deposit)': 0.10, 'Deposit (Term Certificate of Deposit)': 0.05, 'Bond issued': 0.05 };
-        let hq = 0, bb = 0;
-        const pd = new Map<string, { io: string; qs: number; r: number }>();
-        for (const r of rawDbRows) {
-          const ac = r.ac_code?.trim() ?? '', m = lookupAccountMapping(ac); if (!m) continue;
-          const ref = r.ref_no?.trim() ?? '', mid = m.middleCategory, cp = r.counterparty_no?.trim() ?? '';
-          const o = O_ELIGIBLE_CATEGORIES.has(m.category) ? (ctMap2.get(cp) ?? '') : '', pk = mid + '_' + o;
-          const n = NR.has(ref) ? 'Non Cash Flow' : (m.hqlaOrCashflowType ?? '');
-          const q = Q_SIGN_FLIP_CODES.has(ac) ? -(r.base_ccy_amt ?? 0) : (r.base_ccy_amt ?? 0);
-          const rt = arMap3.get(pk) ?? 0, s = cS(ac, r.maturity_date);
-          if (n === 'HQLA') hq += q;
-          if ((n === 'Inflow' || n === 'Outflow') && is30(s)) { const e = pd.get(pk); if (e) e.qs += q; else pd.set(pk, { io: n, qs: q, r: rt }); }
-          if (n === 'Outflow' && !is30(s)) { const br = BR[mid]; if (br) bb += Math.abs(q) * br; }
-        }
-        let of3 = 0, if3 = 0;
-        for (const [, d] of pd) { const k = d.qs * d.r; if (d.io === 'Outflow') of3 += k; else if (d.io === 'Inflow') if3 += k; }
-        const g = of3 + bb, net = g - Math.min(if3 + g * 0.20, g * 0.75);
-        return net > 0 ? (Math.round(hq) / net) * 100 : null;
-      })();
+      const { rows: arRows3 } = await pool.query('SELECT p_key, assumption_rate FROM assumption_rules');
+      const arMap3 = new Map((arRows3 as Array<{ p_key: string; assumption_rate: number }>).map((r) => [r.p_key.trim(), r.assumption_rate]));
+      const day30End = (() => { const d = new Date(reportDate + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + 30); return d.toISOString().substring(0, 10); })();
+      const is30 = (s: string) => s === 'Tomorrow' || (s >= reportDate && s <= day30End);
+      const cS = (ac: string, md: string | null) => { const mo = moMap2.get(ac); if (mo) return resolveOverride2(mo.formula_type, mo.formula_params); if (!md || md < reportDate) return 'Tomorrow'; return md; };
+      const NR = new Set(['RCH3001AUD', 'RCH3002AUD', 'RCH4001USD']);
+      const BR: Record<string, number> = { 'Deposit (Certificate of Deposit)': 0.10, 'Deposit (Term Certificate of Deposit)': 0.05, 'Bond issued': 0.05 };
+      let hq = 0, bb = 0;
+      const pd = new Map<string, { io: string; qs: number; r: number }>();
+      for (const r of rawDbRows) {
+        const ac = r.ac_code?.trim() ?? '', m = lookupAccountMapping(ac); if (!m) continue;
+        const ref = r.ref_no?.trim() ?? '', mid = m.middleCategory, cp = r.counterparty_no?.trim() ?? '';
+        const o = O_ELIGIBLE_CATEGORIES.has(m.category) ? (ctMap2.get(cp) ?? '') : '', pk = mid + '_' + o;
+        const n = NR.has(ref) ? 'Non Cash Flow' : (m.hqlaOrCashflowType ?? '');
+        const q = Q_SIGN_FLIP_CODES.has(ac) ? -(r.base_ccy_amt ?? 0) : (r.base_ccy_amt ?? 0);
+        const rt = arMap3.get(pk) ?? 0, s = cS(ac, r.maturity_date);
+        if (n === 'HQLA') hq += q;
+        if ((n === 'Inflow' || n === 'Outflow') && is30(s)) { const e = pd.get(pk); if (e) e.qs += q; else pd.set(pk, { io: n, qs: q, r: rt }); }
+        if (n === 'Outflow' && !is30(s)) { const br = BR[mid]; if (br) bb += Math.abs(q) * br; }
+      }
+      let of3 = 0, if3 = 0;
+      for (const [, d] of pd) { const k = d.qs * d.r; if (d.io === 'Outflow') of3 += k; else if (d.io === 'Inflow') if3 += k; }
+      const grossOutflowDb = of3 + bb;
+      const grossInflowDb = if3;
+      const hoFacilityDb = grossOutflowDb * 0.20;
+      const sumInflowDb = grossInflowDb + hoFacilityDb;
+      const cappedInflowDb = Math.min(sumInflowDb, grossOutflowDb * 0.75);
+      const netCashOutflowDb = grossOutflowDb - cappedInflowDb;
+      const hqlaDb = Math.round(hq);
+      const lcrPercentForDb = netCashOutflowDb > 0 ? (hqlaDb / netCashOutflowDb) * 100 : null;
 
       const { rows: _lmgExist } = await pool.query('SELECT id FROM report_summaries WHERE report_run_id = $1', [runId]);
       if (_lmgExist.length > 0) {
-        await pool.query('UPDATE report_summaries SET lcr_ratio = $1, ratio_7d = $2, ratio_1m = $3, ratio_3m = $4, ratio_3m_lr = $5 WHERE report_run_id = $6',
-          [lcrPercentForDb, ratio7D, ratio1M, ratio3M, ratio3MLR, runId]);
+        await pool.query(
+          `UPDATE report_summaries SET eligible_hqla = $1, gross_outflows = $2, gross_inflows = $3,
+           capped_inflows = $4, net_cash_outflows = $5, lcr_ratio = $6,
+           ratio_7d = $7, ratio_1m = $8, ratio_3m = $9, ratio_3m_lr = $10
+           WHERE report_run_id = $11`,
+          [hqlaDb, grossOutflowDb, grossInflowDb, cappedInflowDb, netCashOutflowDb,
+           lcrPercentForDb, ratio7D, ratio1M, ratio3M, ratio3MLR, runId]);
       } else {
-        await pool.query(`INSERT INTO report_summaries (id, report_run_id, report_date, eligible_hqla, gross_outflows, gross_inflows, capped_inflows, net_cash_outflows, lcr_ratio, ratio_7d, ratio_1m, ratio_3m, ratio_3m_lr, created_at) VALUES ($1, $2, $3, 0, 0, 0, 0, 0, $4, $5, $6, $7, $8, $9)`,
-          [uuidv4(), runId, reportDate, lcrPercentForDb, ratio7D, ratio1M, ratio3M, ratio3MLR, new Date().toISOString()]);
+        await pool.query(
+          `INSERT INTO report_summaries (id, report_run_id, report_date,
+           eligible_hqla, gross_outflows, gross_inflows, capped_inflows, net_cash_outflows,
+           lcr_ratio, ratio_7d, ratio_1m, ratio_3m, ratio_3m_lr, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+          [uuidv4(), runId, reportDate,
+           hqlaDb, grossOutflowDb, grossInflowDb, cappedInflowDb, netCashOutflowDb,
+           lcrPercentForDb, ratio7D, ratio1M, ratio3M, ratio3MLR, new Date().toISOString()]);
       }
     } catch (e) {
       console.warn('[LMG] Failed to persist summary:', e);
@@ -2441,6 +2455,100 @@ export async function handleIrrbb(req: Request, res: Response): Promise<void> {
     }
     const irrbb = row.irrbb_data ? JSON.parse(row.irrbb_data) : null;
     res.json({ success: true, runId, irrbb });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: msg });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/monthly-average-lcr?reportDate=YYYY-MM-DD
+// Computes the month-to-date Monthly Average LCR from report_summaries.
+//
+// Aggregates eligible_hqla, gross_outflows, gross_inflows from all report
+// dates in the same calendar month up to the given date (inclusive).
+// Uses the same capped-inflow LCR formula as the main pipeline.
+// ---------------------------------------------------------------------------
+
+export async function handleMonthlyAverageLcr(req: Request, res: Response): Promise<void> {
+  const { reportDate } = req.query as { reportDate?: string };
+  if (!reportDate) {
+    res.status(400).json({ success: false, error: 'Provide ?reportDate=YYYY-MM-DD' });
+    return;
+  }
+
+  try {
+    const pool = getPool();
+
+    // Month boundaries: YYYY-MM-01 to reportDate
+    const monthStart = reportDate.substring(0, 7) + '-01';
+
+    // Query report_summaries for all dates in this month up to reportDate.
+    // Only the latest run per report_date is included (same dedup as history).
+    const { rows } = await pool.query(`
+      SELECT rs.report_date, rs.eligible_hqla, rs.gross_outflows, rs.gross_inflows
+      FROM report_summaries rs
+      JOIN report_runs rr ON rr.id = rs.report_run_id
+      WHERE rs.report_date >= $1
+        AND rs.report_date <= $2
+        AND rr.id = (
+          SELECT id FROM report_runs
+          WHERE report_date = rr.report_date
+          ORDER BY uploaded_at DESC LIMIT 1
+        )
+      ORDER BY rs.report_date
+    `, [monthStart, reportDate]);
+
+    if (rows.length === 0) {
+      res.json({
+        success: true,
+        reportDate,
+        monthStart,
+        daysIncluded: 0,
+        totalOutflow: 0,
+        totalInflow: 0,
+        totalHqla: 0,
+        monthlyAverageLcr: null,
+      });
+      return;
+    }
+
+    let totalOutflow = 0;
+    let totalInflow = 0;
+    let totalHqla = 0;
+
+    for (const row of rows) {
+      totalOutflow += row.gross_outflows ?? 0;
+      totalInflow  += row.gross_inflows ?? 0;
+      totalHqla    += row.eligible_hqla ?? 0;
+    }
+
+    // Same LCR formula as main pipeline (CF Table D103–D119):
+    // hoFacility     = totalOutflow * 0.20
+    // sumInflow      = totalInflow + hoFacility
+    // cappedInflow   = MIN(sumInflow, totalOutflow * 0.75)
+    // netCashOutflow = totalOutflow - cappedInflow
+    // monthlyAverageLcr = (totalHqla / netCashOutflow) * 100
+    const hoFacility = totalOutflow * 0.20;
+    const sumInflow = totalInflow + hoFacility;
+    const cappedInflow = Math.min(sumInflow, totalOutflow * 0.75);
+    const netCashOutflow = totalOutflow - cappedInflow;
+    const monthlyAverageLcr = netCashOutflow > 0
+      ? (totalHqla / netCashOutflow) * 100
+      : null;
+
+    res.json({
+      success: true,
+      reportDate,
+      monthStart,
+      daysIncluded: rows.length,
+      totalOutflow: Math.round(totalOutflow),
+      totalInflow: Math.round(totalInflow),
+      totalHqla: Math.round(totalHqla),
+      monthlyAverageLcr: monthlyAverageLcr !== null
+        ? Math.round(monthlyAverageLcr * 100) / 100
+        : null,
+    });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     res.status(500).json({ success: false, error: msg });

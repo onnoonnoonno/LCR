@@ -31,6 +31,7 @@ import {
   handleDeleteAccountMapping,
   handleLcrForecast,
   handleIrrbb,
+  handleMonthlyAverageLcr,
 } from '../controllers/reportController';
 
 export const apiRouter = Router();
@@ -114,6 +115,7 @@ apiRouter.get('/verify/lmg-summary', handleVerifyLmgSummary);
 apiRouter.get('/verify/cf-table', handleVerifyCfTable);
 apiRouter.get('/verify/lcr-forecast', handleLcrForecast);
 apiRouter.get('/verify/irrbb', handleIrrbb);
+apiRouter.get('/monthly-average-lcr', handleMonthlyAverageLcr);
 
 // ---------------------------------------------------------------------------
 // Debug routes (admin only)

@@ -475,6 +475,29 @@ export async function fetchIrrbb(runId: string): Promise<IrrbbResponse> {
   return handleResponse<IrrbbResponse>(res);
 }
 
+// ---------------------------------------------------------------------------
+// Monthly Average LCR
+// ---------------------------------------------------------------------------
+
+export interface MonthlyAverageLcrResponse {
+  success:           boolean;
+  reportDate:        string;
+  monthStart:        string;
+  daysIncluded:      number;
+  totalOutflow:      number;
+  totalInflow:       number;
+  totalHqla:         number;
+  monthlyAverageLcr: number | null;
+}
+
+export async function fetchMonthlyAverageLcr(reportDate: string): Promise<MonthlyAverageLcrResponse> {
+  const params = new URLSearchParams({ reportDate });
+  const res = await fetch(`${base()}/api/monthly-average-lcr?${params}`, {
+    headers: authHeaders(),
+  });
+  return handleResponse<MonthlyAverageLcrResponse>(res);
+}
+
 export interface BsRe33Row {
   row: number;
   acCode: string;

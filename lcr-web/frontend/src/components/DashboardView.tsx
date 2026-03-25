@@ -22,12 +22,14 @@ import {
   fetchGapForecast,
   fetchLcrForecast,
   fetchIrrbb,
+  fetchMonthlyAverageLcr,
   uploadRaw,
   HistoryItem,
   LmgSummaryResponse,
   ForecastResponse,
   LcrForecastResponse,
   IrrbbData,
+  MonthlyAverageLcrResponse,
 } from '../services/api';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -78,11 +80,28 @@ function toTs(dateStr: string): number {
   return new Date(y, m - 1, d).getTime();
 }
 
-function checkBreach(value: number | null, cfg: ItemConfig): 'N' | 'Y' | 'Crisis' {
+/**
+ * Check breach status for a KRI item.
+ *
+ * Special rule for 3M Liquidity Ratio (key='3m_lr'):
+ *   If value <= trigger (40%) BUT Monthly Average LCR >= 80%, treat as NOT breach.
+ *   Only breach when BOTH 3M LR <= 40 AND Monthly Average LCR < 80.
+ *
+ * @param monthlyAvgLcrPct  Monthly Average LCR percentage (e.g. 85.0 = 85%)
+ */
+function checkBreach(value: number | null, cfg: ItemConfig, monthlyAvgLcrPct?: number | null): 'N' | 'Y' | 'Crisis' {
   if (value === null) return 'N';
   if (cfg.direction === 'lte') {
-    if (cfg.limitValue !== null && value <= cfg.limitValue) return 'Crisis';
-    if (value <= cfg.triggerValue) return 'Y';
+    if (cfg.limitValue !== null && value <= cfg.limitValue) {
+      // 3M Liquidity special rule: Monthly Average LCR >= 80 overrides breach
+      if (cfg.key === '3m_lr' && monthlyAvgLcrPct != null && monthlyAvgLcrPct >= 80) return 'N';
+      return 'Crisis';
+    }
+    if (value <= cfg.triggerValue) {
+      // 3M Liquidity special rule: Monthly Average LCR >= 80 overrides breach
+      if (cfg.key === '3m_lr' && monthlyAvgLcrPct != null && monthlyAvgLcrPct >= 80) return 'N';
+      return 'Y';
+    }
     return 'N';
   }
   if (cfg.limitValue !== null && value >= cfg.limitValue) return 'Crisis';
@@ -160,6 +179,7 @@ export function DashboardView({ view, externalRunId, onNavigate }: Props) {
   const [fc1m, setFc1m]     = useState<ForecastResponse | null>(null);
   const [fc3m, setFc3m]     = useState<ForecastResponse | null>(null);
   const [irrbbData, setIrrbbData] = useState<IrrbbData | null>(null);
+  const [monthlyAvgLcr, setMonthlyAvgLcr] = useState<MonthlyAverageLcrResponse | null>(null);
 
   const [popupItem, setPopupItem]   = useState<ItemKey | null>(null);
   const [showUpload, setShowUpload] = useState(false);
@@ -265,13 +285,14 @@ export function DashboardView({ view, externalRunId, onNavigate }: Props) {
       setReportDate(currentDateStr);
       setPrevDate(prevDateStr);
 
-      const [lmgData, f7d, f1m, f3m, lcrFc, irrbbRes] = await Promise.all([
+      const [lmgData, f7d, f1m, f3m, lcrFc, irrbbRes, monthlyAvgRes] = await Promise.all([
         fetchLmgSummary(currentRunId!),
         fetchGapForecast(currentRunId!, '7day'),
         fetchGapForecast(currentRunId!, '1month'),
         fetchGapForecast(currentRunId!, '3month'),
         fetchLcrForecast(currentRunId!),
         fetchIrrbb(currentRunId!).catch(() => null),
+        currentDateStr ? fetchMonthlyAverageLcr(currentDateStr).catch(() => null) : Promise.resolve(null),
       ]);
 
       const currentIrrbb = irrbbRes?.irrbb ?? null;
@@ -282,6 +303,7 @@ export function DashboardView({ view, externalRunId, onNavigate }: Props) {
       setFc3m(f3m);
       setLcrForecast(lcrFc);
       setIrrbbData(currentIrrbb);
+      setMonthlyAvgLcr(monthlyAvgRes ?? null);
       setCurrentValues(extractValues(lmgData, currentIrrbb));
 
       if (prevRunId) {
@@ -319,14 +341,15 @@ export function DashboardView({ view, externalRunId, onNavigate }: Props) {
       const newDate = res.reportDate;
       console.debug('[Dashboard] upload complete — runId:', res.runId, 'date:', newDate);
 
-      // Fetch KRI data for the new run (including IRRBB)
-      const [lmgData, f7d, f1m, f3m, lcrFc, irrbbRes] = await Promise.all([
+      // Fetch KRI data for the new run (including IRRBB + Monthly Avg LCR)
+      const [lmgData, f7d, f1m, f3m, lcrFc, irrbbRes, monthlyAvgRes] = await Promise.all([
         fetchLmgSummary(res.runId),
         fetchGapForecast(res.runId, '7day'),
         fetchGapForecast(res.runId, '1month'),
         fetchGapForecast(res.runId, '3month'),
         fetchLcrForecast(res.runId),
         fetchIrrbb(res.runId).catch(() => null),
+        fetchMonthlyAverageLcr(newDate).catch(() => null),
       ]);
 
       const newIrrbb = irrbbRes?.irrbb ?? null;
@@ -350,6 +373,7 @@ export function DashboardView({ view, externalRunId, onNavigate }: Props) {
       setFc3m(f3m);
       setLcrForecast(lcrFc);
       setIrrbbData(newIrrbb);
+      setMonthlyAvgLcr(monthlyAvgRes ?? null);
       setCurrentValues(extractValues(lmgData, newIrrbb));
       setReportDate(newDate);
       setPrevDate(prevDateStr);
@@ -461,7 +485,7 @@ export function DashboardView({ view, externalRunId, onNavigate }: Props) {
   function renderMetricCard(item: ItemConfig) {
     const curr = currentValues![item.key];
     const prev = previousValues?.[item.key] ?? null;
-    const breach = checkBreach(curr, item);
+    const breach = checkBreach(curr, item, monthlyAvgLcr?.monthlyAverageLcr);
     const diff = curr !== null && prev !== null ? curr - prev : null;
 
     return (
@@ -532,7 +556,7 @@ export function DashboardView({ view, externalRunId, onNavigate }: Props) {
   function renderItemRow(item: ItemConfig) {
     const curr = currentValues![item.key];
     const prev = previousValues?.[item.key] ?? null;
-    const breach = checkBreach(curr, item);
+    const breach = checkBreach(curr, item, monthlyAvgLcr?.monthlyAverageLcr);
     const diff = curr !== null && prev !== null ? curr - prev : null;
 
     return (
@@ -576,7 +600,7 @@ export function DashboardView({ view, externalRunId, onNavigate }: Props) {
           {ITEMS.map((item) => {
             const curr = currentValues![item.key];
             const prev = previousValues?.[item.key] ?? null;
-            const breach = checkBreach(curr, item);
+            const breach = checkBreach(curr, item, monthlyAvgLcr?.monthlyAverageLcr);
             const diff = curr !== null && prev !== null ? curr - prev : null;
             return (
               <div
@@ -708,6 +732,40 @@ export function DashboardView({ view, externalRunId, onNavigate }: Props) {
               </div>
             </div>
           )}
+
+          {/* Monthly Average LCR highlight box */}
+          {(() => {
+            const avgVal = monthlyAvgLcr?.monthlyAverageLcr ?? null;
+            const hasValue = avgVal !== null;
+            const avgColor = hasValue
+              ? (avgVal < 80 ? '#f59e0b' : 'var(--color-primary)')
+              : 'var(--color-text-muted)';
+            return (
+              <div
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: '0.75rem',
+                  background: hasValue ? `${avgColor}0D` : '#f8fafc',
+                  border: `1px solid ${hasValue ? avgColor + '33' : '#e2e8f0'}`,
+                  borderRadius: '8px', padding: '0.5rem 1rem', marginBottom: '1rem', marginLeft: '0.5rem',
+                }}
+                title="Calculated from month-to-date total HQLA / (total Outflow - capped Inflow), not from averaging daily LCR values."
+              >
+                <div>
+                  <div style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '2px' }}>Monthly Avg LCR</div>
+                  <div style={{ fontSize: '1.3rem', fontWeight: 800, color: avgColor, lineHeight: 1.1 }}>
+                    {hasValue ? `${avgVal.toFixed(2)}%` : 'N/A'}
+                  </div>
+                </div>
+                <div style={{ width: 1, height: 36, background: hasValue ? `${avgColor}33` : '#e2e8f0' }} />
+                <div>
+                  <div style={{ fontSize: '0.68rem', fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '2px' }}>MTD days</div>
+                  <div style={{ fontSize: '0.95rem', fontWeight: 700, color: '#1e293b' }}>
+                    {monthlyAvgLcr ? monthlyAvgLcr.daysIncluded : 0}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
 
           <ResponsiveContainer width="100%" height={300}>
             <AreaChart data={lcrChartData} margin={{ top: 10, right: 110, bottom: 5, left: 10 }}>
@@ -1179,7 +1237,7 @@ export function DashboardView({ view, externalRunId, onNavigate }: Props) {
             <table className="data-table">
               <thead><tr><th>Period</th><th className="text-right">Trigger</th><th className="text-right">Limit</th>{thTwoLine('Previous Day', prevDate)}{thTwoLine('Current Day', reportDate)}<th className="text-right">Daily Change</th><th style={{ textAlign: 'center' }}>Breach</th></tr></thead>
               <tbody>
-                {GAP_ITEMS.map((item) => { const curr = currentValues![item.key]; const prev = previousValues?.[item.key] ?? null; const breach = checkBreach(curr, item); const diff = curr !== null && prev !== null ? curr - prev : null; return (
+                {GAP_ITEMS.map((item) => { const curr = currentValues![item.key]; const prev = previousValues?.[item.key] ?? null; const breach = checkBreach(curr, item, monthlyAvgLcr?.monthlyAverageLcr); const diff = curr !== null && prev !== null ? curr - prev : null; return (
                   <tr key={item.key}><td style={{ fontWeight: 600 }}>{item.label}</td><td className="text-right mono" style={{ color: 'var(--color-trigger)', fontWeight: 700 }}>{item.triggerDisplay}</td><td className="text-right mono" style={{ color: 'var(--color-limit)', fontWeight: 700 }}>{item.limitDisplay}</td><td className="text-right mono" style={{ fontWeight: 600 }}>{fmtVal(prev)}</td><td className="text-right mono" style={{ fontWeight: 700 }}>{fmtVal(curr)}</td><td className="text-right mono" style={{ fontWeight: 600, color: changeColor(diff, item.direction) }}>{fmtChange(curr, prev)}</td><td style={{ textAlign: 'center' }}><span className={`breach-badge breach-badge--${breach.toLowerCase()}`}>{breach}</span></td></tr>
                 ); })}
               </tbody>
@@ -1448,7 +1506,7 @@ export function DashboardView({ view, externalRunId, onNavigate }: Props) {
             const lcrItem = ITEMS.find((i) => i.key === 'lcr')!;
             const lcrCurr = currentValues?.['lcr'] ?? null;
             const lcrPrev = previousValues?.['lcr'] ?? null;
-            const lcrBreach = checkBreach(lcrCurr, lcrItem);
+            const lcrBreach = checkBreach(lcrCurr, lcrItem, monthlyAvgLcr?.monthlyAverageLcr);
             return (
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem' }}>
                 {/* Left: Report Date / source / upload time */}
