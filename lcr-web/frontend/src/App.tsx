@@ -200,18 +200,18 @@ export default function App() {
             >
               Account Mapping
             </button>
-            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-              <span style={{ fontSize: '0.72rem', fontFamily: 'var(--font-mono)', color: idleRemaining < 60000 ? '#dc2626' : 'var(--color-text-muted)', fontWeight: idleRemaining < 60000 ? 600 : 400 }}>
-                {String(Math.floor(idleRemaining / 60000)).padStart(2, '0')}:{String(Math.floor((idleRemaining % 60000) / 1000)).padStart(2, '0')}
-              </span>
+            <div style={{ marginLeft: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.15rem' }}>
               <button
                 className="nav-tab"
                 onClick={handleLogout}
-                style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}
+                style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', padding: '0.2rem 0' }}
                 title={`Signed in as ${authUser.employeeId}`}
               >
                 {authUser.employeeId} · Sign out
               </button>
+              <span style={{ fontSize: '0.68rem', fontFamily: 'var(--font-mono)', color: idleRemaining <= 180000 ? '#dc2626' : 'var(--color-text-muted)', fontWeight: idleRemaining <= 180000 ? 600 : 400 }}>
+                {String(Math.floor(idleRemaining / 60000)).padStart(2, '0')}:{String(Math.floor((idleRemaining % 60000) / 1000)).padStart(2, '0')}
+              </span>
             </div>
           </nav>
         </div>

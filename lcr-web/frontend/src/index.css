@@ -1038,10 +1038,11 @@ select.form-input {
    Root cause note: cells have BOTH .mono (0.825rem) and .summary-num-* classes.
    We must use .summary-num-*.mono compound selectors with explicit sizes to
    ensure the numeric sizes always win. Using "inherit" is WRONG because it
-   inherits from the parent <td>/<tr> (0.9–1rem), not from the intended rule. */
+   inherits from the parent <td>/<tr> (0.9–1rem), not from the intended rule.
+   font-weight: 900 matches .kpi-card__value for visual consistency. */
 .summary-table--lg .summary-num,
 .summary-table--lg .summary-num.mono {
-  font-weight: 800;
+  font-weight: 900;
   font-size: 1.38rem;
 }
 .summary-table--lg .summary-num-current,
@@ -1051,25 +1052,25 @@ select.form-input {
 }
 .summary-table--lg .summary-num-prev,
 .summary-table--lg .summary-num-prev.mono {
-  font-weight: 800;
+  font-weight: 900;
   font-size: 1.38rem;
 }
 .summary-table--lg .summary-num-change,
 .summary-table--lg .summary-num-change.mono {
-  font-weight: 800;
+  font-weight: 900;
   font-size: 1.30rem;
 }
 /* Trigger / Limit value columns */
 .summary-table--lg .summary-trigger-val,
 .summary-table--lg .summary-trigger-val.mono {
   color: var(--color-trigger);
-  font-weight: 800;
+  font-weight: 900;
   font-size: 1.25rem;
 }
 .summary-table--lg .summary-limit-val,
 .summary-table--lg .summary-limit-val.mono {
   color: var(--color-limit);
-  font-weight: 800;
+  font-weight: 900;
   font-size: 1.25rem;
 }
 

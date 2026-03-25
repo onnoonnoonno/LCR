@@ -33,7 +33,7 @@ authRouter.post('/login', async (req: Request, res: Response): Promise<void> => 
   try {
     const pool = getPool();
     const { rows } = await pool.query(
-      'SELECT id, employee_id, password_hash, role, must_change_password, failed_login_attempts, is_locked FROM users WHERE employee_id = $1',
+      'SELECT * FROM users WHERE employee_id = $1',
       [employeeId]
     );
     const user = rows[0] as {
@@ -42,12 +42,12 @@ authRouter.post('/login', async (req: Request, res: Response): Promise<void> => 
       password_hash: string;
       role: string;
       must_change_password: number;
-      failed_login_attempts: number;
-      is_locked: number;
+      failed_login_attempts: number | null;
+      is_locked: number | null;
     } | undefined;
 
     // Check if account is locked (before bcrypt to avoid timing leaks on locked accounts)
-    if (user && user.is_locked === 1) {
+    if (user && (user.is_locked ?? 0) === 1) {
       // Still run bcrypt against dummy to prevent timing-based user enumeration
       bcrypt.compareSync(password, '$2b$12$invalidhashpaddingtomakethissafe00000000000000000000000');
       res.status(403).json({ success: false, error: 'Account is locked. Please contact an administrator.' });
@@ -62,29 +62,38 @@ authRouter.post('/login', async (req: Request, res: Response): Promise<void> => 
     if (!user || !match) {
       // Increment failed attempts for existing users
       if (user) {
-        const newAttempts = user.failed_login_attempts + 1;
-        if (newAttempts >= MAX_FAILED_ATTEMPTS) {
+        try {
+          const newAttempts = (user.failed_login_attempts ?? 0) + 1;
+          if (newAttempts >= MAX_FAILED_ATTEMPTS) {
+            await pool.query(
+              'UPDATE users SET failed_login_attempts = $1, is_locked = 1, locked_at = $2 WHERE id = $3',
+              [newAttempts, new Date().toISOString(), user.id]
+            );
+            res.status(403).json({ success: false, error: 'Account has been locked due to too many failed login attempts. Please contact an administrator.' });
+            return;
+          }
           await pool.query(
-            'UPDATE users SET failed_login_attempts = $1, is_locked = 1, locked_at = $2 WHERE id = $3',
-            [newAttempts, new Date().toISOString(), user.id]
+            'UPDATE users SET failed_login_attempts = $1 WHERE id = $2',
+            [newAttempts, user.id]
           );
-          res.status(403).json({ success: false, error: 'Account has been locked due to too many failed login attempts. Please contact an administrator.' });
-          return;
+        } catch (lockErr) {
+          // Columns may not exist yet; don't break login flow
+          console.warn('[auth] Failed to update login attempt count:', lockErr);
         }
-        await pool.query(
-          'UPDATE users SET failed_login_attempts = $1 WHERE id = $2',
-          [newAttempts, user.id]
-        );
       }
       res.status(401).json({ success: false, error: 'Invalid employee ID or password.' });
       return;
     }
 
     // Successful login — reset failed attempts
-    await pool.query(
-      'UPDATE users SET failed_login_attempts = 0 WHERE id = $1',
-      [user.id]
-    );
+    try {
+      await pool.query(
+        'UPDATE users SET failed_login_attempts = 0 WHERE id = $1',
+        [user.id]
+      );
+    } catch (resetErr) {
+      console.warn('[auth] Failed to reset login attempt count:', resetErr);
+    }
 
     const mustChangePassword = user.must_change_password === 1;
 

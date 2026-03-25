@@ -252,8 +252,25 @@ async function seedDemoUsers(): Promise<void> {
 // ---------------------------------------------------------------------------
 // Public entry point
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Safe schema migration — adds new columns if missing (idempotent)
+// ---------------------------------------------------------------------------
+async function migrateSchema(): Promise<void> {
+  const pool = getPool();
+  const migrations = [
+    'ALTER TABLE users ADD COLUMN IF NOT EXISTS failed_login_attempts INTEGER NOT NULL DEFAULT 0',
+    'ALTER TABLE users ADD COLUMN IF NOT EXISTS is_locked INTEGER NOT NULL DEFAULT 0',
+    'ALTER TABLE users ADD COLUMN IF NOT EXISTS locked_at TEXT',
+  ];
+  for (const sql of migrations) {
+    try { await pool.query(sql); } catch (e) { console.warn('[migrate]', sql, e); }
+  }
+  console.log('[seed] Schema migration check complete.');
+}
+
 export async function seedReferenceData(): Promise<void> {
   console.log('[seed] Seeding reference tables from JSON files...');
+  await migrateSchema();
   await seedAccountMappings();
   await seedCustomerTypes();
   await seedAssumptionRules();
