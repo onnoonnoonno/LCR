@@ -285,15 +285,21 @@ export function DashboardView({ view, externalRunId, onNavigate }: Props) {
       setReportDate(currentDateStr);
       setPrevDate(prevDateStr);
 
-      const [lmgData, f7d, f1m, f3m, lcrFc, irrbbRes, monthlyAvgRes] = await Promise.all([
+      const [lmgData, f7d, f1m, f3m, lcrFc, irrbbRes] = await Promise.all([
         fetchLmgSummary(currentRunId!),
         fetchGapForecast(currentRunId!, '7day'),
         fetchGapForecast(currentRunId!, '1month'),
         fetchGapForecast(currentRunId!, '3month'),
         fetchLcrForecast(currentRunId!),
         fetchIrrbb(currentRunId!).catch(() => null),
-        currentDateStr ? fetchMonthlyAverageLcr(currentDateStr).catch(() => null) : Promise.resolve(null),
       ]);
+
+      // Monthly Average LCR must be fetched AFTER LMG summary completes,
+      // because LMG summary persists the report_summaries row that the
+      // monthly average query aggregates.
+      const monthlyAvgRes = currentDateStr
+        ? await fetchMonthlyAverageLcr(currentDateStr).catch(() => null)
+        : null;
 
       const currentIrrbb = irrbbRes?.irrbb ?? null;
       console.debug('[Dashboard] loadData — runId:', currentRunId, 'date:', currentDateStr, 'irrbb:', currentIrrbb ? `ratio=${currentIrrbb.ratio}` : 'null');
@@ -341,16 +347,18 @@ export function DashboardView({ view, externalRunId, onNavigate }: Props) {
       const newDate = res.reportDate;
       console.debug('[Dashboard] upload complete — runId:', res.runId, 'date:', newDate);
 
-      // Fetch KRI data for the new run (including IRRBB + Monthly Avg LCR)
-      const [lmgData, f7d, f1m, f3m, lcrFc, irrbbRes, monthlyAvgRes] = await Promise.all([
+      // Fetch KRI data for the new run (including IRRBB)
+      const [lmgData, f7d, f1m, f3m, lcrFc, irrbbRes] = await Promise.all([
         fetchLmgSummary(res.runId),
         fetchGapForecast(res.runId, '7day'),
         fetchGapForecast(res.runId, '1month'),
         fetchGapForecast(res.runId, '3month'),
         fetchLcrForecast(res.runId),
         fetchIrrbb(res.runId).catch(() => null),
-        fetchMonthlyAverageLcr(newDate).catch(() => null),
       ]);
+
+      // Monthly Average LCR must be fetched AFTER LMG summary completes
+      const monthlyAvgRes = await fetchMonthlyAverageLcr(newDate).catch(() => null);
 
       const newIrrbb = irrbbRes?.irrbb ?? null;
       console.debug('[Dashboard] upload irrbb:', newIrrbb ? `ratio=${newIrrbb.ratio}` : 'null');
@@ -714,54 +722,45 @@ export function DashboardView({ view, externalRunId, onNavigate }: Props) {
             <span style={{ fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>Unit: %</span>
           </div>
 
-          {/* Lowest LCR highlight box */}
-          {lcrMin && (
-            <div style={{
-              display: 'inline-flex', alignItems: 'center', gap: '0.75rem',
-              background: `${minColor}0D`, border: `1px solid ${minColor}33`,
-              borderRadius: '8px', padding: '0.5rem 1rem', marginBottom: '1rem',
-            }}>
-              <div>
-                <div style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '2px' }}>Lowest</div>
-                <div style={{ fontSize: '1.3rem', fontWeight: 800, color: minColor, lineHeight: 1.1 }}>{lcrMin.lcr.toFixed(2)}%</div>
-              </div>
-              <div style={{ width: 1, height: 36, background: `${minColor}33` }} />
-              <div>
-                <div style={{ fontSize: '0.68rem', fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '2px' }}>Recorded on</div>
-                <div style={{ fontSize: '0.95rem', fontWeight: 700, color: '#1e293b' }}>{lcrMin.date}</div>
-              </div>
-            </div>
-          )}
-
-          {/* Monthly Average LCR highlight box */}
+          {/* Summary metrics row: Lowest + Monthly Avg LCR */}
           {(() => {
             const avgVal = monthlyAvgLcr?.monthlyAverageLcr ?? null;
-            const hasValue = avgVal !== null;
-            const avgColor = hasValue
+            const avgColor = avgVal !== null
               ? (avgVal < 80 ? '#f59e0b' : 'var(--color-primary)')
               : 'var(--color-text-muted)';
             return (
               <div
                 style={{
                   display: 'inline-flex', alignItems: 'center', gap: '0.75rem',
-                  background: hasValue ? `${avgColor}0D` : '#f8fafc',
-                  border: `1px solid ${hasValue ? avgColor + '33' : '#e2e8f0'}`,
-                  borderRadius: '8px', padding: '0.5rem 1rem', marginBottom: '1rem', marginLeft: '0.5rem',
+                  background: `${minColor}0D`, border: `1px solid ${minColor}33`,
+                  borderRadius: '8px', padding: '0.5rem 1rem', marginBottom: '1rem',
                 }}
-                title="Calculated from month-to-date total HQLA / (total Outflow - capped Inflow), not from averaging daily LCR values."
+                title="Monthly Avg LCR: Calculated from month-to-date total HQLA / (total Outflow - capped Inflow), not from averaging daily LCR values."
               >
+                {/* Lowest */}
+                {lcrMin && (<>
+                  <div>
+                    <div style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '2px' }}>Lowest</div>
+                    <div style={{ fontSize: '1.3rem', fontWeight: 800, color: minColor, lineHeight: 1.1 }}>{lcrMin.lcr.toFixed(2)}%</div>
+                  </div>
+                  <div style={{ width: 1, height: 36, background: `${minColor}33` }} />
+                  <div>
+                    <div style={{ fontSize: '0.68rem', fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '2px' }}>Recorded on</div>
+                    <div style={{ fontSize: '0.95rem', fontWeight: 700, color: '#1e293b' }}>{lcrMin.date}</div>
+                  </div>
+                  <div style={{ width: 1, height: 36, background: `${minColor}33` }} />
+                </>)}
+                {/* Monthly Avg LCR */}
                 <div>
                   <div style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '2px' }}>Monthly Avg LCR</div>
                   <div style={{ fontSize: '1.3rem', fontWeight: 800, color: avgColor, lineHeight: 1.1 }}>
-                    {hasValue ? `${avgVal.toFixed(2)}%` : 'N/A'}
+                    {avgVal !== null ? `${avgVal.toFixed(2)}%` : 'N/A'}
                   </div>
                 </div>
-                <div style={{ width: 1, height: 36, background: hasValue ? `${avgColor}33` : '#e2e8f0' }} />
+                <div style={{ width: 1, height: 36, background: `${minColor}33` }} />
                 <div>
                   <div style={{ fontSize: '0.68rem', fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '2px' }}>MTD days</div>
-                  <div style={{ fontSize: '0.95rem', fontWeight: 700, color: '#1e293b' }}>
-                    {monthlyAvgLcr ? monthlyAvgLcr.daysIncluded : 0}
-                  </div>
+                  <div style={{ fontSize: '0.95rem', fontWeight: 700, color: '#1e293b' }}>{monthlyAvgLcr ? monthlyAvgLcr.daysIncluded : 0}</div>
                 </div>
               </div>
             );
