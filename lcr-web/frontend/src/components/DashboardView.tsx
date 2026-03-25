@@ -621,24 +621,25 @@ export function DashboardView({ view, externalRunId, onNavigate }: Props) {
                   {curr !== null ? curr.toFixed(2) : '—'}
                   {curr !== null && <span style={{ fontSize: '1rem', fontWeight: 700, marginLeft: '3px' }}>%</span>}
                 </div>
-                <div className="kpi-card__footer">
-                  <span className={`breach-badge breach-badge--${breach.toLowerCase()}`}>{breach}</span>
-                  {diff !== null && (
-                    <span className="kpi-card__change" style={{ color: changeColor(diff, item.direction) ?? 'var(--color-text-muted)' }}>
-                      {diff > 0 ? '+' : ''}{diff.toFixed(2)} %p
-                    </span>
-                  )}
+                <div className="kpi-card__footer" style={item.key === 'lcr' ? { justifyContent: 'space-between' } : undefined}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <span className={`breach-badge breach-badge--${breach.toLowerCase()}`}>{breach}</span>
+                    {diff !== null && (
+                      <span className="kpi-card__change" style={{ color: changeColor(diff, item.direction) ?? 'var(--color-text-muted)' }}>
+                        {diff > 0 ? '+' : ''}{diff.toFixed(2)} %p
+                      </span>
+                    )}
+                  </div>
+                  {item.key === 'lcr' && (() => {
+                    const mAvg = monthlyAvgLcr?.monthlyAverageLcr ?? null;
+                    const mColor = mAvg !== null ? (mAvg >= 80 ? 'var(--color-primary)' : '#d97706') : 'var(--color-text-muted)';
+                    return (
+                      <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }} title="Month-to-date average LCR (basis for 3M Liquidity override)">
+                        Monthly Avg: <span style={{ fontWeight: 700, color: mColor }}>{mAvg !== null ? `${mAvg.toFixed(2)}%` : 'N/A'}</span>
+                      </span>
+                    );
+                  })()}
                 </div>
-                {item.key === 'lcr' && (() => {
-                  const mAvg = monthlyAvgLcr?.monthlyAverageLcr ?? null;
-                  const mColor = mAvg !== null ? (mAvg >= 80 ? 'var(--color-text-muted)' : '#d97706') : 'var(--color-text-muted)';
-                  return (
-                    <div style={{ fontSize: '0.7rem', color: mColor, marginTop: '0.15rem' }} title="Month-to-date average LCR (basis for 3M Liquidity override)">
-                      <span style={{ fontWeight: 600 }}>Monthly Avg:</span>{' '}
-                      <span style={{ fontWeight: 700 }}>{mAvg !== null ? `${mAvg.toFixed(2)}%` : 'N/A'}</span>
-                    </div>
-                  );
-                })()}
               </div>
             );
           })}

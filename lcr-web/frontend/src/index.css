@@ -1037,39 +1037,39 @@ select.form-input {
 /* --- Number hierarchy: Current (1st) > Previous (2nd) > Change (3rd) --- */
 .summary-table--lg .summary-num {
   font-weight: 800;
-  font-size: 1.32rem;
+  font-size: 1.38rem;
 }
 .summary-table--lg .summary-num-current {
   font-weight: 900;
-  font-size: 1.50rem;
+  font-size: 1.55rem;
 }
 .summary-table--lg .summary-num-prev {
   font-weight: 800;
-  font-size: 1.35rem;
+  font-size: 1.38rem;
 }
 .summary-table--lg .summary-num-change {
   font-weight: 800;
-  font-size: 1.25rem;
+  font-size: 1.30rem;
 }
-/* Override .mono when combined with summary-num classes so the number hierarchy wins */
-.summary-table--lg .summary-num.mono,
-.summary-table--lg .summary-num-current.mono,
-.summary-table--lg .summary-num-prev.mono,
-.summary-table--lg .summary-num-change.mono {
-  font-size: inherit;
-}
-/* Trigger / Limit value columns should also be prominent */
-.summary-table--lg .summary-trigger-val,
-.summary-table--lg .summary-limit-val {
-  font-size: 1.18rem;
-}
+/* Trigger / Limit value columns */
 .summary-table--lg .summary-trigger-val {
   color: var(--color-trigger);
   font-weight: 800;
+  font-size: 1.25rem;
 }
 .summary-table--lg .summary-limit-val {
   color: var(--color-limit);
   font-weight: 800;
+  font-size: 1.25rem;
+}
+/* Override .mono when combined with any numeric class so the sizes above always win */
+.summary-table--lg .summary-num.mono,
+.summary-table--lg .summary-num-current.mono,
+.summary-table--lg .summary-num-prev.mono,
+.summary-table--lg .summary-num-change.mono,
+.summary-table--lg .summary-trigger-val.mono,
+.summary-table--lg .summary-limit-val.mono {
+  font-size: inherit;
 }
 
 /* ---------- Two-line header cell (label + date) ------------- */
@@ -1166,7 +1166,7 @@ select.form-input {
 }
 .summary-table--lg .summary-num-current {
   font-weight: 900;
-  font-size: 1.55rem;
+  font-size: 1.60rem;
   color: var(--color-primary);
   letter-spacing: -0.01em;
 }
