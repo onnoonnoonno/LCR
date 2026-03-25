@@ -1034,42 +1034,43 @@ select.form-input {
   padding-bottom: 0.9rem;
 }
 
-/* --- Number hierarchy: Current (1st) > Previous (2nd) > Change (3rd) --- */
-.summary-table--lg .summary-num {
+/* --- Number hierarchy: Current (1st) > Previous (2nd) > Change (3rd) ---
+   Root cause note: cells have BOTH .mono (0.825rem) and .summary-num-* classes.
+   We must use .summary-num-*.mono compound selectors with explicit sizes to
+   ensure the numeric sizes always win. Using "inherit" is WRONG because it
+   inherits from the parent <td>/<tr> (0.9–1rem), not from the intended rule. */
+.summary-table--lg .summary-num,
+.summary-table--lg .summary-num.mono {
   font-weight: 800;
   font-size: 1.38rem;
 }
-.summary-table--lg .summary-num-current {
+.summary-table--lg .summary-num-current,
+.summary-table--lg .summary-num-current.mono {
   font-weight: 900;
   font-size: 1.55rem;
 }
-.summary-table--lg .summary-num-prev {
+.summary-table--lg .summary-num-prev,
+.summary-table--lg .summary-num-prev.mono {
   font-weight: 800;
   font-size: 1.38rem;
 }
-.summary-table--lg .summary-num-change {
+.summary-table--lg .summary-num-change,
+.summary-table--lg .summary-num-change.mono {
   font-weight: 800;
   font-size: 1.30rem;
 }
 /* Trigger / Limit value columns */
-.summary-table--lg .summary-trigger-val {
+.summary-table--lg .summary-trigger-val,
+.summary-table--lg .summary-trigger-val.mono {
   color: var(--color-trigger);
   font-weight: 800;
   font-size: 1.25rem;
 }
-.summary-table--lg .summary-limit-val {
+.summary-table--lg .summary-limit-val,
+.summary-table--lg .summary-limit-val.mono {
   color: var(--color-limit);
   font-weight: 800;
   font-size: 1.25rem;
-}
-/* Override .mono when combined with any numeric class so the sizes above always win */
-.summary-table--lg .summary-num.mono,
-.summary-table--lg .summary-num-current.mono,
-.summary-table--lg .summary-num-prev.mono,
-.summary-table--lg .summary-num-change.mono,
-.summary-table--lg .summary-trigger-val.mono,
-.summary-table--lg .summary-limit-val.mono {
-  font-size: inherit;
 }
 
 /* ---------- Two-line header cell (label + date) ------------- */
@@ -1164,7 +1165,8 @@ select.form-input {
   padding-left: 1.6rem !important;
   padding-right: 1.6rem !important;
 }
-.summary-table--lg .summary-num-current {
+.summary-table--lg .summary-num-current,
+.summary-table--lg .summary-num-current.mono {
   font-weight: 900;
   font-size: 1.60rem;
   color: var(--color-primary);

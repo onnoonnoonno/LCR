@@ -55,13 +55,21 @@ CREATE INDEX IF NOT EXISTS idx_mo_refno  ON maturity_overrides(ref_no);
 -- ---------------------------------------------------------------------------
 
 CREATE TABLE IF NOT EXISTS users (
-  id                   BIGSERIAL PRIMARY KEY,
-  employee_id          TEXT    NOT NULL UNIQUE,
-  password_hash        TEXT    NOT NULL,
-  role                 TEXT    NOT NULL DEFAULT 'user',
-  must_change_password INTEGER NOT NULL DEFAULT 1,
-  created_at           TEXT    NOT NULL DEFAULT NOW()
+  id                    BIGSERIAL PRIMARY KEY,
+  employee_id           TEXT    NOT NULL UNIQUE,
+  password_hash         TEXT    NOT NULL,
+  role                  TEXT    NOT NULL DEFAULT 'user',
+  must_change_password  INTEGER NOT NULL DEFAULT 1,
+  failed_login_attempts INTEGER NOT NULL DEFAULT 0,
+  is_locked             INTEGER NOT NULL DEFAULT 0,
+  locked_at             TEXT,
+  created_at            TEXT    NOT NULL DEFAULT NOW()
 );
+
+-- Safe migration for existing databases
+ALTER TABLE users ADD COLUMN IF NOT EXISTS failed_login_attempts INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS is_locked INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS locked_at TEXT;
 
 -- ---------------------------------------------------------------------------
 -- Report runs

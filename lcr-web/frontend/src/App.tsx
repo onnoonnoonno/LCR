@@ -7,7 +7,7 @@
  *   3. Token + password changed → main app
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { DashboardView, ViewMode } from './components/DashboardView';
 import { VerifyView } from './components/VerifyView';
 import { CfTableView } from './components/CfTableView';
@@ -66,9 +66,50 @@ export default function App() {
     }
   }, []);
 
+  // ---------------------------------------------------------------
+  // Inactivity auto-logout (10 minutes)
+  // ---------------------------------------------------------------
+  const IDLE_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+  const [idleRemaining, setIdleRemaining] = useState(IDLE_TIMEOUT_MS);
+  const idleDeadlineRef = useRef(Date.now() + IDLE_TIMEOUT_MS);
+
+  const resetIdleTimer = useCallback(() => {
+    idleDeadlineRef.current = Date.now() + IDLE_TIMEOUT_MS;
+    setIdleRemaining(IDLE_TIMEOUT_MS);
+  }, []);
+
+  // Register activity listeners
+  useEffect(() => {
+    if (!authUser) return;
+    const events: (keyof WindowEventMap)[] = ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'];
+    for (const ev of events) window.addEventListener(ev, resetIdleTimer, { passive: true });
+    return () => { for (const ev of events) window.removeEventListener(ev, resetIdleTimer); };
+  }, [authUser, resetIdleTimer]);
+
+  // Tick every second to update countdown + trigger logout
+  useEffect(() => {
+    if (!authUser) return;
+    const interval = setInterval(() => {
+      const remaining = idleDeadlineRef.current - Date.now();
+      if (remaining <= 0) {
+        clearInterval(interval);
+        // Auto-logout
+        clearToken();
+        setAuthUser(null);
+        setMustChangePassword(false);
+        setTab('dashboard');
+        setSelectedRunId(undefined);
+      } else {
+        setIdleRemaining(remaining);
+      }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [authUser]);
+
   function handleLogin(user: AuthUser, mustChange: boolean) {
     setAuthUser(user);
     setMustChangePassword(mustChange);
+    resetIdleTimer();
   }
 
   function handlePasswordChanged() {
@@ -159,14 +200,19 @@ export default function App() {
             >
               Account Mapping
             </button>
-            <button
-              className="nav-tab"
-              onClick={handleLogout}
-              style={{ marginLeft: 'auto', fontSize: '0.8rem', color: 'var(--color-text-muted)' }}
-              title={`Signed in as ${authUser.employeeId}`}
-            >
-              {authUser.employeeId} · Sign out
-            </button>
+            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+              <span style={{ fontSize: '0.72rem', fontFamily: 'var(--font-mono)', color: idleRemaining < 60000 ? '#dc2626' : 'var(--color-text-muted)', fontWeight: idleRemaining < 60000 ? 600 : 400 }}>
+                {String(Math.floor(idleRemaining / 60000)).padStart(2, '0')}:{String(Math.floor((idleRemaining % 60000) / 1000)).padStart(2, '0')}
+              </span>
+              <button
+                className="nav-tab"
+                onClick={handleLogout}
+                style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}
+                title={`Signed in as ${authUser.employeeId}`}
+              >
+                {authUser.employeeId} · Sign out
+              </button>
+            </div>
           </nav>
         </div>
       </header>
