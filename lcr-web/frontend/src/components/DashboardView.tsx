@@ -33,6 +33,7 @@ import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
   ReferenceLine, ResponsiveContainer, Dot,
 } from 'recharts';
+import { exportSectionsToPdf } from '../services/pdfExport';
 
 // ============================================================
 // Types & Configuration
@@ -171,6 +172,13 @@ export function DashboardView({ view, externalRunId, onNavigate }: Props) {
   const [uploadProcessing, setUploadProcessing] = useState(false);
   const [triviaText, setTriviaText] = useState('');
   const triviaTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // PDF export refs
+  const dashboardReportDateRef = useRef<HTMLDivElement>(null);
+  const dashboardSummaryRef = useRef<HTMLDivElement>(null);
+  const lcrChartsRef = useRef<HTMLDivElement>(null);
+  const lcrForecastTableRef = useRef<HTMLDivElement>(null);
+  const [pdfExporting, setPdfExporting] = useState(false);
 
   // Pick a random trivia item, avoiding immediate repeat
   function pickTrivia(current: string): string {
@@ -373,6 +381,37 @@ export function DashboardView({ view, externalRunId, onNavigate }: Props) {
   }
 
   // ----------------------------------------------------------
+  // PDF export handlers
+  // ----------------------------------------------------------
+
+  async function handleExportDashboardPdf() {
+    const sections: { element: HTMLElement; label?: string }[] = [];
+    if (dashboardReportDateRef.current) sections.push({ element: dashboardReportDateRef.current });
+    if (dashboardSummaryRef.current)    sections.push({ element: dashboardSummaryRef.current });
+    if (!sections.length) return;
+    setPdfExporting(true);
+    try {
+      await exportSectionsToPdf(sections, `Dashboard_${reportDate || 'export'}`);
+    } finally {
+      setPdfExporting(false);
+    }
+  }
+
+  async function handleExportLcrPdf() {
+    const sections: { element: HTMLElement; label?: string }[] = [];
+    if (dashboardReportDateRef.current) sections.push({ element: dashboardReportDateRef.current });
+    if (lcrChartsRef.current)           sections.push({ element: lcrChartsRef.current });
+    if (lcrForecastTableRef.current)    sections.push({ element: lcrForecastTableRef.current });
+    if (!sections.length) return;
+    setPdfExporting(true);
+    try {
+      await exportSectionsToPdf(sections, `LCR_Report_${reportDate || 'export'}`);
+    } finally {
+      setPdfExporting(false);
+    }
+  }
+
+  // ----------------------------------------------------------
   // Render: upload processing overlay (3D logo spinner)
   // ----------------------------------------------------------
 
@@ -526,7 +565,7 @@ export function DashboardView({ view, externalRunId, onNavigate }: Props) {
     if (!currentValues) return null;
 
     return (
-      <div className="card">
+      <div ref={dashboardSummaryRef} className="card">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
           <h2 className="verify-step-title">Regulatory Indicators</h2>
           <span style={{ fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>(Unit: %, %p)</span>
@@ -643,7 +682,7 @@ export function DashboardView({ view, externalRunId, onNavigate }: Props) {
       : 'var(--color-text)';
 
     return (
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.25rem', marginBottom: '1.25rem' }}>
+      <div ref={lcrChartsRef} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.25rem', marginBottom: '1.25rem' }}>
         {/* Left: LCR Trend chart */}
         <div className="card" style={{ margin: 0, cursor: 'pointer' }} onClick={() => setChartPopup('actual')}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
@@ -965,7 +1004,7 @@ export function DashboardView({ view, externalRunId, onNavigate }: Props) {
           : '';
 
     return (
-      <div className="card">
+      <div ref={lcrForecastTableRef} className="card">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
           <h2 className="verify-step-title" style={{ margin: 0 }}>8-Month LCR Forecast</h2>
 
@@ -1402,7 +1441,7 @@ export function DashboardView({ view, externalRunId, onNavigate }: Props) {
   return (
     <div className="verify-view">
       {renderUploadOverlay()}
-      <div className="card" style={{ padding: '1rem 1.25rem' }}>
+      <div ref={dashboardReportDateRef} className="card" style={{ padding: '1rem 1.25rem' }}>
         {!showUpload ? (
           (() => {
             // For the LCR view, embed LCR Detail metrics directly in the strip
@@ -1455,9 +1494,18 @@ export function DashboardView({ view, externalRunId, onNavigate }: Props) {
                       <div style={{ fontSize: '0.68rem', fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Breach</div>
                       <span className={`breach-badge breach-badge--${lcrBreach.toLowerCase()}`}>{lcrBreach}</span>
                     </div>
+                    <div style={{ width: 1, height: 36, background: 'var(--color-border)' }} />
+                    <button className="btn btn--ghost" style={{ whiteSpace: 'nowrap', padding: '0.4rem 0.9rem', fontSize: '0.78rem' }} onClick={handleExportLcrPdf} disabled={pdfExporting}>
+                      {pdfExporting ? 'Exporting...' : 'Export PDF'}
+                    </button>
                   </div>
                 ) : view === 'dashboard' ? (
-                  <button className="btn btn--primary" style={{ whiteSpace: 'nowrap', padding: '0.5rem 1.25rem', fontSize: '0.9rem' }} onClick={() => setShowUpload(true)}>Upload New File</button>
+                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                    <button className="btn btn--ghost" style={{ whiteSpace: 'nowrap', padding: '0.45rem 1rem', fontSize: '0.82rem' }} onClick={handleExportDashboardPdf} disabled={pdfExporting}>
+                      {pdfExporting ? 'Exporting...' : 'Export PDF'}
+                    </button>
+                    <button className="btn btn--primary" style={{ whiteSpace: 'nowrap', padding: '0.5rem 1.25rem', fontSize: '0.9rem' }} onClick={() => setShowUpload(true)}>Upload New File</button>
+                  </div>
                 ) : null}
               </div>
             );
