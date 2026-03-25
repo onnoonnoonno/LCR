@@ -1060,33 +1060,33 @@ select.form-input {
   font-weight: 900;
 }
 
-/* Individual size rules */
+/* Individual size rules — ITEM labels inherit 1rem (16px) from td.
+   Numeric values are set to ~+2pt above that for subtle emphasis.
+   1.125rem = 18px (+2px), Current Day 1.1875rem = 19px (+3px). */
 .summary-table--lg .summary-num,
-.summary-table--lg .summary-num.mono {
-  font-size: 1.38rem;
+.summary-table--lg .summary-num.mono,
+.summary-table--lg .summary-num-prev,
+.summary-table--lg .summary-num-prev.mono,
+.summary-table--lg .summary-num-change,
+.summary-table--lg .summary-num-change.mono,
+.summary-table--lg .summary-trigger-val,
+.summary-table--lg .summary-trigger-val.mono,
+.summary-table--lg .summary-limit-val,
+.summary-table--lg .summary-limit-val.mono {
+  font-size: 1.125rem;  /* 18px — label is 16px, so +2px */
 }
 .summary-table--lg .summary-num-current,
 .summary-table--lg .summary-num-current.mono {
-  font-size: 1.55rem;
+  font-size: 1.1875rem; /* 19px — slight extra for current day */
 }
-.summary-table--lg .summary-num-prev,
-.summary-table--lg .summary-num-prev.mono {
-  font-size: 1.38rem;
-}
-.summary-table--lg .summary-num-change,
-.summary-table--lg .summary-num-change.mono {
-  font-size: 1.30rem;
-}
-/* Trigger / Limit value columns — keep their color */
+/* Trigger / Limit colors */
 .summary-table--lg .summary-trigger-val,
 .summary-table--lg .summary-trigger-val.mono {
   color: var(--color-trigger);
-  font-size: 1.25rem;
 }
 .summary-table--lg .summary-limit-val,
 .summary-table--lg .summary-limit-val.mono {
   color: var(--color-limit);
-  font-size: 1.25rem;
 }
 
 /* ---------- Two-line header cell (label + date) ------------- */
@@ -1184,7 +1184,7 @@ select.form-input {
 .summary-table--lg .summary-num-current,
 .summary-table--lg .summary-num-current.mono {
   font-weight: 900;
-  font-size: 1.60rem;
+  font-size: 1.1875rem; /* 19px — matches the size rule above */
   color: var(--color-primary);
   letter-spacing: -0.01em;
 }
