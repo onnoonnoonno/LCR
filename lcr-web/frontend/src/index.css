@@ -1035,42 +1035,57 @@ select.form-input {
 }
 
 /* --- Number hierarchy: Current (1st) > Previous (2nd) > Change (3rd) ---
-   Root cause note: cells have BOTH .mono (0.825rem) and .summary-num-* classes.
-   We must use .summary-num-*.mono compound selectors with explicit sizes to
-   ensure the numeric sizes always win. Using "inherit" is WRONG because it
-   inherits from the parent <td>/<tr> (0.9–1rem), not from the intended rule.
-   font-weight: 900 matches .kpi-card__value for visual consistency. */
+   ROOT CAUSE of prior failures: cells have class .mono which sets
+   font-family to JetBrains Mono / monospace. Most monospace fonts only
+   support weight 400 + 700, so font-weight: 900 gets clamped to 700.
+   FIX: override font-family back to the sans-serif stack (Inter) which
+   supports weight 900, matching the KPI card numbers exactly.
+   We also use tabular-nums so the digits still align in columns. */
+
+/* Shared override: all numeric cells in the summary table */
+.summary-table--lg .summary-num,
+.summary-table--lg .summary-num.mono,
+.summary-table--lg .summary-num-current,
+.summary-table--lg .summary-num-current.mono,
+.summary-table--lg .summary-num-prev,
+.summary-table--lg .summary-num-prev.mono,
+.summary-table--lg .summary-num-change,
+.summary-table--lg .summary-num-change.mono,
+.summary-table--lg .summary-trigger-val,
+.summary-table--lg .summary-trigger-val.mono,
+.summary-table--lg .summary-limit-val,
+.summary-table--lg .summary-limit-val.mono {
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  font-weight: 900;
+}
+
+/* Individual size rules */
 .summary-table--lg .summary-num,
 .summary-table--lg .summary-num.mono {
-  font-weight: 900;
   font-size: 1.38rem;
 }
 .summary-table--lg .summary-num-current,
 .summary-table--lg .summary-num-current.mono {
-  font-weight: 900;
   font-size: 1.55rem;
 }
 .summary-table--lg .summary-num-prev,
 .summary-table--lg .summary-num-prev.mono {
-  font-weight: 900;
   font-size: 1.38rem;
 }
 .summary-table--lg .summary-num-change,
 .summary-table--lg .summary-num-change.mono {
-  font-weight: 900;
   font-size: 1.30rem;
 }
-/* Trigger / Limit value columns */
+/* Trigger / Limit value columns — keep their color */
 .summary-table--lg .summary-trigger-val,
 .summary-table--lg .summary-trigger-val.mono {
   color: var(--color-trigger);
-  font-weight: 900;
   font-size: 1.25rem;
 }
 .summary-table--lg .summary-limit-val,
 .summary-table--lg .summary-limit-val.mono {
   color: var(--color-limit);
-  font-weight: 900;
   font-size: 1.25rem;
 }
 
