@@ -629,6 +629,16 @@ export function DashboardView({ view, externalRunId, onNavigate }: Props) {
                     </span>
                   )}
                 </div>
+                {item.key === 'lcr' && (() => {
+                  const mAvg = monthlyAvgLcr?.monthlyAverageLcr ?? null;
+                  const mColor = mAvg !== null ? (mAvg >= 80 ? 'var(--color-text-muted)' : '#d97706') : 'var(--color-text-muted)';
+                  return (
+                    <div style={{ fontSize: '0.7rem', color: mColor, marginTop: '0.15rem' }} title="Month-to-date average LCR (basis for 3M Liquidity override)">
+                      <span style={{ fontWeight: 600 }}>Monthly Avg:</span>{' '}
+                      <span style={{ fontWeight: 700 }}>{mAvg !== null ? `${mAvg.toFixed(2)}%` : 'N/A'}</span>
+                    </div>
+                  );
+                })()}
               </div>
             );
           })}
