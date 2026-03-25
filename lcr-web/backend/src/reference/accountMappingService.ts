@@ -127,15 +127,28 @@ export function isIndexReady(): boolean {
  * Returns deduplicated, sorted arrays of unmapped codes and names.
  * Empty arrays = all valid.
  */
+/**
+ * Normalise an account name for comparison.
+ * Strips leading dashes/hyphens, collapses whitespace, trims, lowercases.
+ */
+function normalizeName(raw: string): string {
+  return String(raw)
+    .replace(/\u00A0/g, ' ')     // NBSP → space
+    .replace(/^[-–—]+/, '')      // strip leading dashes (common in chart-of-accounts naming)
+    .replace(/\s+/g, ' ')        // collapse multiple spaces
+    .trim()
+    .toLowerCase();
+}
+
 export function validateAgainstMappings(
   rows: { acCode: string | null; acName: string | null }[]
 ): { unmappedCodes: string[]; unmappedNames: string[] } {
   const idx = getIndex();
 
-  // Build a set of all known acNames (normalised to lowercase for comparison)
+  // Build a set of all known acNames (normalised for comparison)
   const knownNames = new Set<string>();
   for (const mapping of idx.values()) {
-    if (mapping.acName) knownNames.add(mapping.acName.trim().toLowerCase());
+    if (mapping.acName) knownNames.add(normalizeName(mapping.acName));
   }
 
   const badCodes = new Set<string>();
@@ -143,15 +156,17 @@ export function validateAgainstMappings(
 
   for (const row of rows) {
     // Check acCode via existing lookup (exact + prefix fallback)
-    if (row.acCode != null && String(row.acCode).trim() !== '') {
-      const match = lookupAccountMapping(row.acCode);
-      if (!match) badCodes.add(normalizeKey(row.acCode));
-    }
+    const codeOk = row.acCode != null && String(row.acCode).trim() !== ''
+      ? lookupAccountMapping(row.acCode) !== null
+      : true; // null/empty code is not an unmapped-code error (Zod catches missing fields)
 
-    // Check acName
-    if (row.acName != null && String(row.acName).trim() !== '') {
-      const normName = String(row.acName).trim().toLowerCase();
-      if (!knownNames.has(normName)) badNames.add(String(row.acName).trim());
+    if (!codeOk) badCodes.add(normalizeKey(row.acCode));
+
+    // Check acName — if the acCode mapped successfully, skip acName check
+    // (the row is identified by its code; name variants are acceptable)
+    if (!codeOk && row.acName != null && String(row.acName).trim() !== '') {
+      const norm = normalizeName(row.acName);
+      if (!knownNames.has(norm)) badNames.add(String(row.acName).trim());
     }
   }
 

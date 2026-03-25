@@ -1037,22 +1037,26 @@ select.form-input {
 /* --- Number hierarchy: Current (1st) > Previous (2nd) > Change (3rd) --- */
 .summary-table--lg .summary-num {
   font-weight: 800;
-  font-size: 1.12rem;
+  font-size: 1.15rem;
 }
 .summary-table--lg .summary-num-current {
   font-weight: 900;
-  font-size: 1.22rem;
+  font-size: 1.28rem;
 }
 .summary-table--lg .summary-num-prev {
   font-weight: 800;
-  font-size: 1.15rem;
+  font-size: 1.18rem;
 }
 .summary-table--lg .summary-num-change {
   font-weight: 800;
-  font-size: 1.10rem;
+  font-size: 1.12rem;
 }
-.summary-table--lg .mono {
-  font-size: 0.95rem;
+/* Override .mono when combined with summary-num classes so the number hierarchy wins */
+.summary-table--lg .summary-num.mono,
+.summary-table--lg .summary-num-current.mono,
+.summary-table--lg .summary-num-prev.mono,
+.summary-table--lg .summary-num-change.mono {
+  font-size: inherit;
 }
 .summary-table--lg .summary-trigger-val {
   color: var(--color-trigger);
@@ -1157,7 +1161,7 @@ select.form-input {
 }
 .summary-table--lg .summary-num-current {
   font-weight: 900;
-  font-size: 1.30rem;
+  font-size: 1.35rem;
   color: var(--color-primary);
   letter-spacing: -0.01em;
 }

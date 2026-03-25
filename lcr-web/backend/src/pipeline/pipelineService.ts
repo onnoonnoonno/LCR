@@ -41,12 +41,13 @@ export async function loadReferenceDataFromDb(): Promise<void> {
   // Account mappings
   const { rows: amRows } = await pool.query('SELECT * FROM account_mappings');
   const amEntries: AccountMapping[] = (amRows as Array<{
-    ac_code: string; category: string | null; middle_category: string | null;
-    hqla_or_cashflow_type: string | null; asset_liability_type: string | null;
-    sign_multiplier: number; is_hqla: number; hqla_level: string | null;
-    description: string | null;
+    ac_code: string; ac_name: string | null; category: string | null;
+    middle_category: string | null; hqla_or_cashflow_type: string | null;
+    asset_liability_type: string | null; sign_multiplier: number;
+    is_hqla: number; hqla_level: string | null; description: string | null;
   }>).map((r) => ({
     acCode:               r.ac_code,
+    acName:               r.ac_name ?? undefined,
     category:             r.category ?? '',
     middleCategory:       r.middle_category ?? '',
     hqlaOrCashflowType:   r.hqla_or_cashflow_type ?? '',

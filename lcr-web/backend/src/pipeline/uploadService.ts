@@ -127,6 +127,26 @@ export async function uploadRawData(
     [runId]
   );
 
+  // Delete older uploads for the same report date (keep only this new one)
+  try {
+    const { rows: oldRuns } = await pool.query(
+      'SELECT id FROM report_runs WHERE report_date = $1 AND id != $2',
+      [reportDate, runId]
+    );
+    if (oldRuns.length > 0) {
+      const oldIds = oldRuns.map((r: { id: string }) => r.id);
+      console.log(`[uploadService] Cleaning up ${oldIds.length} older run(s) for date=${reportDate}: [${oldIds.join(', ')}]`);
+      // Delete child records first (FK order), then parent
+      await pool.query('DELETE FROM report_summaries WHERE report_run_id = ANY($1)', [oldIds]);
+      await pool.query('DELETE FROM processed_rows WHERE report_run_id = ANY($1)', [oldIds]);
+      await pool.query('DELETE FROM raw_rows WHERE report_run_id = ANY($1)', [oldIds]);
+      await pool.query('DELETE FROM report_runs WHERE id = ANY($1)', [oldIds]);
+    }
+  } catch (e) {
+    console.warn('[uploadService] Cleanup of older same-date runs failed:', e);
+    // Non-fatal: the new upload succeeded, older data just wasn't cleaned up
+  }
+
   console.log(`[uploadService] runId=${runId} date=${reportDate} rows=${rows.length}`);
 
   return { runId, reportDate, sourceFilename: originalFilename, rawRowCount: rows.length };
