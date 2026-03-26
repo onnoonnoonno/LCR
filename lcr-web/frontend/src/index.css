@@ -1042,7 +1042,11 @@ select.form-input {
    supports weight 900, matching the KPI card numbers exactly.
    We also use tabular-nums so the digits still align in columns. */
 
-/* Shared override: all numeric cells in the summary table */
+/* Shared override: all numeric cells in the summary table.
+   Using var(--font-sans) (Inter) so that font-weight renders correctly
+   (monospace fonts cap out at 700). Weight 700 = standard bold — heavy
+   enough to stand out without inflating the perceived glyph size the way
+   weight 900 (Black) does. */
 .summary-table--lg .summary-num,
 .summary-table--lg .summary-num.mono,
 .summary-table--lg .summary-num-current,
@@ -1057,7 +1061,7 @@ select.form-input {
 .summary-table--lg .summary-limit-val.mono {
   font-family: var(--font-sans);
   font-variant-numeric: tabular-nums;
-  font-weight: 900;
+  font-weight: 700;
 }
 
 /* Individual size rules — ITEM labels inherit 1rem (16px) from td.
@@ -1183,7 +1187,7 @@ select.form-input {
 }
 .summary-table--lg .summary-num-current,
 .summary-table--lg .summary-num-current.mono {
-  font-weight: 900;
+  font-weight: 700;
   font-size: 1.1875rem; /* 19px — matches the size rule above */
   color: var(--color-primary);
   letter-spacing: -0.01em;

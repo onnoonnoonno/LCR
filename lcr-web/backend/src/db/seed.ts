@@ -237,15 +237,21 @@ async function seedDemoUsers(): Promise<void> {
 
   for (const u of DEMO_USERS) {
     const hash = bcrypt.hashSync(u.password, SALT_ROUNDS);
-    await pool.query(
+    // ON CONFLICT DO NOTHING — never overwrite an existing user's password_hash
+    // or must_change_password.  The old DO UPDATE upsert was the root cause of
+    // password resets: every server restart re-hashed the seed password and
+    // overwrote whatever the user had changed it to.
+    const { rowCount } = await pool.query(
       `INSERT INTO users (employee_id, password_hash, role, must_change_password)
        VALUES ($1, $2, $3, $4)
-       ON CONFLICT (employee_id) DO UPDATE SET
-         password_hash        = EXCLUDED.password_hash,
-         must_change_password = EXCLUDED.must_change_password`,
+       ON CONFLICT (employee_id) DO NOTHING`,
       [u.employee_id, hash, u.role, u.must_change_password]
     );
-    console.log(`[seed] demo user upserted: ${u.employee_id} (${u.role})`);
+    if (rowCount && rowCount > 0) {
+      console.log(`[seed] demo user created: ${u.employee_id} (${u.role})`);
+    } else {
+      console.log(`[seed] demo user already exists, skipped: ${u.employee_id}`);
+    }
   }
 }
 

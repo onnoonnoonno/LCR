@@ -1244,12 +1244,10 @@ export function DashboardView({ view, externalRunId, onNavigate }: Props) {
             <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>(Unit: %, %p)</span>
           </div>
           <div className="table-wrapper">
-            <table className="data-table">
-              <thead><tr><th>Period</th><th className="text-right">Trigger</th><th className="text-right">Limit</th>{thTwoLine('Previous Day', prevDate)}{thTwoLine('Current Day', reportDate)}<th className="text-right">Daily Change</th><th style={{ textAlign: 'center' }}>Breach</th></tr></thead>
+            <table className="data-table summary-table summary-table--lg">
+              <thead><tr><th>Period</th><th className="text-right">Trigger</th><th className="text-right">Limit</th>{thTwoLine('Previous Day', prevDate)}{thTwoLine('Current Day', reportDate, 'current-day-col current-day-col--top')}<th className="text-right">Daily Change</th><th style={{ textAlign: 'center' }}>Breach</th></tr></thead>
               <tbody>
-                {GAP_ITEMS.map((item) => { const curr = currentValues![item.key]; const prev = previousValues?.[item.key] ?? null; const breach = checkBreach(curr, item, monthlyAvgLcr?.monthlyAverageLcr); const diff = curr !== null && prev !== null ? curr - prev : null; return (
-                  <tr key={item.key}><td style={{ fontWeight: 600 }}>{item.label}</td><td className="text-right mono" style={{ color: 'var(--color-trigger)', fontWeight: 700 }}>{item.triggerDisplay}</td><td className="text-right mono" style={{ color: 'var(--color-limit)', fontWeight: 700 }}>{item.limitDisplay}</td><td className="text-right mono" style={{ fontWeight: 600 }}>{fmtVal(prev)}</td><td className="text-right mono" style={{ fontWeight: 700 }}>{fmtVal(curr)}</td><td className="text-right mono" style={{ fontWeight: 600, color: changeColor(diff, item.direction) }}>{fmtChange(curr, prev)}</td><td style={{ textAlign: 'center' }}><span className={`breach-badge breach-badge--${breach.toLowerCase()}`}>{breach}</span></td></tr>
-                ); })}
+                {GAP_ITEMS.map((item) => renderItemRow(item))}
               </tbody>
             </table>
           </div>
