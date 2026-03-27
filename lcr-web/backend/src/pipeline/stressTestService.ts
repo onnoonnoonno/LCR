@@ -151,19 +151,11 @@ export function calculateStressTest(
   const { assetBuckets, liabBuckets, assetNonSens, liabNonSens, buckets, P30 } = fullResult;
 
   // ------------------------------------------------------------------
-  // 1. Build net position per bucket (asset - liability)
-  //    Non-sensitive folded into bucket 0 (O/N) per Python reference
-  // ------------------------------------------------------------------
-  const netPosition = new Array<number>(16);
-  for (let i = 0; i < 16; i++) {
-    const a = assetBuckets[i] + (i === 0 ? assetNonSens : 0);
-    const l = liabBuckets[i]  + (i === 0 ? liabNonSens  : 0);
-    netPosition[i] = a - l;
-  }
-
-  // ------------------------------------------------------------------
-  // 1b. Rate-sensitive-only net positions (for EaR — excludes non-sensitive)
-  //     Matches app2.py line 461: asset_liability_gap = asset_row_sensitive - liability_row_sensitive
+  // 1. Rate-sensitive-only net positions per bucket (asset - liability)
+  //    Non-sensitive is kept SEPARATE to match [Summary_IRRBB] sheet.
+  //    [Summary_IRRBB] has 16 rate-sensitive buckets + 1 "Non-interest
+  //    rate sensitive" column. Shock factors and EaR time-weights only
+  //    apply to the 16 rate-sensitive buckets.
   // ------------------------------------------------------------------
   const sensitiveNetPositions: number[] = [];
   for (let i = 0; i < 16; i++) {
@@ -177,23 +169,27 @@ export function calculateStressTest(
   const totalAsset = totalAssetSensitive + assetNonSens;
 
   // ------------------------------------------------------------------
-  // 3. Bucket summary for display
+  // 3. Bucket summary for display (rate-sensitive only per bucket,
+  //    matching [Summary_IRRBB] which shows non-sensitive separately)
   // ------------------------------------------------------------------
   const bucketSummary: BucketRow[] = buckets.map((b, i) => ({
     bucketName:  b.name,
-    asset:       assetBuckets[i] + (i === 0 ? assetNonSens : 0),
-    liability:   liabBuckets[i]  + (i === 0 ? liabNonSens  : 0),
-    netPosition: netPosition[i],
+    asset:       assetBuckets[i],
+    liability:   liabBuckets[i],
+    netPosition: sensitiveNetPositions[i],
   }));
 
   // ------------------------------------------------------------------
-  // 4. Shock VaR calculation (6 scenarios × 16 buckets)
+  // 4. Shock VaR calculation (6 scenarios × 16 rate-sensitive buckets)
+  //    [Summary_IRRBB] Row 7 net positions are rate-sensitive only.
+  //    O/N shock factor = 0 for all 6 shocks, so non-sensitive in O/N
+  //    would have zero effect anyway, but we keep it clean.
   // ------------------------------------------------------------------
   const shockResults: ShockResult[] = [];
   for (let s = 0; s < SHOCK_TYPES.length; s++) {
     let total = 0;
     for (let i = 0; i < 16; i++) {
-      total += netPosition[i] * WEIGHTING_FACTORS[i][s];
+      total += sensitiveNetPositions[i] * WEIGHTING_FACTORS[i][s];
     }
     shockResults.push({ shockType: SHOCK_TYPES[s], total });
   }

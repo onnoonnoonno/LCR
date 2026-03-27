@@ -1,20 +1,21 @@
 /**
- * StressTestView — IRRBB page (admin-only).
+ * StressTestView — IRRBB Stress Test page (admin-only).
  *
  * Displays VaR (6 shock scenarios), EaR, Gap Ratio, and 16-bucket
  * repricing summary from the /api/stress-test endpoint.
+ * Aligned with [Summary_IRRBB] sheet: non-sensitive shown separately.
  *
- * Custom Rate Shock %: computed frontend-only using netPosition from
- * the backend response and the standard EaR time-weight formula.
- * No backend round-trip needed for custom rate shocks.
+ * Custom Rate Shock %: computed frontend-only using sensitiveNetPositions
+ * from the backend response and the standard EaR time-weight formula.
  */
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   fetchStressTest,
   fetchLatestRun,
   StressTestResponse,
 } from '../services/api';
+import { exportSectionsToPdf } from '../services/pdfExport';
 
 interface Props {
   externalRunId?: string;
@@ -44,12 +45,19 @@ function fmtNum(v: number): string {
 
 function fmtPct(v: number | null): string {
   if (v === null) return 'N/A';
-  // Round at 3rd decimal place, display 2 decimal places
   return (Math.round(v * 100 * 100) / 100).toFixed(2) + '%';
 }
 
 function fmtDollar(v: number): string {
   return '$' + Math.round(Math.abs(v)).toLocaleString();
+}
+
+// Download icon SVG (matches Dashboard/LCR export buttons)
+function DownloadIcon({ spinning }: { spinning?: boolean }) {
+  if (spinning) {
+    return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.5, animation: 'spin 1s linear infinite' }}><circle cx="12" cy="12" r="10" strokeDasharray="32" strokeDashoffset="12" /></svg>;
+  }
+  return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>;
 }
 
 // ---------------------------------------------------------------------------
@@ -64,6 +72,10 @@ export function StressTestView({ externalRunId }: Props) {
   const [error, setError]             = useState<string | null>(null);
   const [rateShockPct, setRateShockPct] = useState(3);
   const [detailTab, setDetailTab]     = useState<DetailTab>('buckets');
+  const [pdfExporting, setPdfExporting] = useState(false);
+
+  // Refs for PDF export
+  const pageRef = useRef<HTMLDivElement>(null);
 
   const loadData = useCallback(async (runId?: string) => {
     setLoading(true);
@@ -119,6 +131,24 @@ export function StressTestView({ externalRunId }: Props) {
   }, [data, rateShockPct]);
 
   // ------------------------------------------------------------------
+  // PDF export
+  // ------------------------------------------------------------------
+
+  async function handleExportPdf() {
+    if (!pageRef.current || !data) return;
+    setPdfExporting(true);
+    try {
+      await exportSectionsToPdf(
+        [{ element: pageRef.current }],
+        `IRRBB_StressTest_${data.reportDate || 'export'}`,
+        { singlePage: true },
+      );
+    } finally {
+      setPdfExporting(false);
+    }
+  }
+
+  // ------------------------------------------------------------------
   // Loading / Error / Empty states
   // ------------------------------------------------------------------
 
@@ -153,17 +183,17 @@ export function StressTestView({ externalRunId }: Props) {
   const worstShock = data.shockResults.reduce((worst, s) =>
     s.total < worst.total ? s : worst, data.shockResults[0]);
 
-  // ------------------------------------------------------------------
-  // Render
-  // ------------------------------------------------------------------
-
   const labelStyle: React.CSSProperties = { fontSize: '0.7rem', fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '0.2rem' };
   const primaryValStyle: React.CSSProperties = { fontSize: '1.5rem', fontWeight: 800, lineHeight: 1.1 };
   const secondaryValStyle: React.CSSProperties = { fontSize: '0.82rem', fontWeight: 600, color: 'var(--color-text-muted)', marginTop: '0.2rem' };
 
+  // ------------------------------------------------------------------
+  // Render
+  // ------------------------------------------------------------------
+
   return (
-    <>
-      {/* Page header — compact info bar style matching LCR report date strip */}
+    <div ref={pageRef}>
+      {/* Page header — compact info bar */}
       <div className="card" style={{ padding: '0.85rem 1.25rem', marginBottom: '1.5rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', flexWrap: 'wrap' }}>
@@ -172,9 +202,21 @@ export function StressTestView({ externalRunId }: Props) {
               <span style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--color-primary)' }}>{data.reportDate}</span>
             </div>
             <div style={{ width: 1, height: 28, background: 'var(--color-border)' }} />
-            <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.04em' }}>IRRBB</span>
+            <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.04em' }}>IRRBB Stress Test</span>
           </div>
-          <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>Admin-only analytical view</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>Admin-only analytical view</span>
+            <button
+              className="btn btn--ghost"
+              style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '0.35rem', borderRadius: '6px', lineHeight: 1 }}
+              onClick={handleExportPdf}
+              disabled={pdfExporting}
+              title="Export PDF"
+              aria-label="Export PDF"
+            >
+              <DownloadIcon spinning={pdfExporting} />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -274,43 +316,48 @@ export function StressTestView({ externalRunId }: Props) {
 
         {/* Tab: Repricing Bucket Summary */}
         {detailTab === 'buckets' && (
-          <>
-            <p style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '0.75rem' }}>
-              16 rate-sensitive repricing buckets. Non-sensitive amounts ({fmtDollar(data.nonSensitive.asset)} asset / {fmtDollar(data.nonSensitive.liability)} liability) included in Overnight bucket.
-            </p>
-            <div className="table-wrapper">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Bucket</th>
-                    <th className="text-right">Asset</th>
-                    <th className="text-right">Liability</th>
-                    <th className="text-right">Net Position</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.bucketSummary.map((b) => (
-                    <tr key={b.bucketName}>
-                      <td style={{ fontWeight: 500, fontSize: '0.82rem' }}>{b.bucketName}</td>
-                      <td className="text-right mono" style={{ fontWeight: 600 }}>{fmtNum(b.asset)}</td>
-                      <td className="text-right mono" style={{ fontWeight: 600 }}>{fmtNum(b.liability)}</td>
-                      <td className="text-right mono" style={{ fontWeight: 700, color: b.netPosition >= 0 ? 'var(--color-success)' : 'var(--color-error)' }}>
-                        {fmtNum(b.netPosition)}
-                      </td>
-                    </tr>
-                  ))}
-                  <tr style={{ borderTop: '2px solid var(--color-border)', fontWeight: 700 }}>
-                    <td>Total</td>
-                    <td className="text-right mono">{fmtNum(data.bucketSummary.reduce((s, b) => s + b.asset, 0))}</td>
-                    <td className="text-right mono">{fmtNum(data.bucketSummary.reduce((s, b) => s + b.liability, 0))}</td>
-                    <td className="text-right mono" style={{ color: data.bucketSummary.reduce((s, b) => s + b.netPosition, 0) >= 0 ? 'var(--color-success)' : 'var(--color-error)' }}>
-                      {fmtNum(data.bucketSummary.reduce((s, b) => s + b.netPosition, 0))}
+          <div className="table-wrapper">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Bucket</th>
+                  <th className="text-right">Asset</th>
+                  <th className="text-right">Liability</th>
+                  <th className="text-right">Net Position</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.bucketSummary.map((b) => (
+                  <tr key={b.bucketName}>
+                    <td style={{ fontWeight: 500, fontSize: '0.82rem' }}>{b.bucketName}</td>
+                    <td className="text-right mono" style={{ fontWeight: 600 }}>{fmtNum(b.asset)}</td>
+                    <td className="text-right mono" style={{ fontWeight: 600 }}>{fmtNum(b.liability)}</td>
+                    <td className="text-right mono" style={{ fontWeight: 700, color: b.netPosition >= 0 ? 'var(--color-success)' : 'var(--color-error)' }}>
+                      {fmtNum(b.netPosition)}
                     </td>
                   </tr>
-                </tbody>
-              </table>
-            </div>
-          </>
+                ))}
+                {/* Non-interest rate sensitive row — separate per [Summary_IRRBB] */}
+                <tr style={{ borderTop: '1px solid var(--color-border)', fontStyle: 'italic', color: 'var(--color-text-muted)' }}>
+                  <td style={{ fontWeight: 500, fontSize: '0.82rem' }}>Non-interest rate sensitive</td>
+                  <td className="text-right mono" style={{ fontWeight: 600 }}>{fmtNum(data.nonSensitive.asset)}</td>
+                  <td className="text-right mono" style={{ fontWeight: 600 }}>{fmtNum(data.nonSensitive.liability)}</td>
+                  <td className="text-right mono" style={{ fontWeight: 700, color: (data.nonSensitive.asset - data.nonSensitive.liability) >= 0 ? 'var(--color-success)' : 'var(--color-error)' }}>
+                    {fmtNum(data.nonSensitive.asset - data.nonSensitive.liability)}
+                  </td>
+                </tr>
+                {/* Total row */}
+                <tr style={{ borderTop: '2px solid var(--color-border)', fontWeight: 700 }}>
+                  <td>Total</td>
+                  <td className="text-right mono">{fmtNum(data.bucketSummary.reduce((s, b) => s + b.asset, 0) + data.nonSensitive.asset)}</td>
+                  <td className="text-right mono">{fmtNum(data.bucketSummary.reduce((s, b) => s + b.liability, 0) + data.nonSensitive.liability)}</td>
+                  <td className="text-right mono" style={{ color: (data.bucketSummary.reduce((s, b) => s + b.netPosition, 0) + data.nonSensitive.asset - data.nonSensitive.liability) >= 0 ? 'var(--color-success)' : 'var(--color-error)' }}>
+                    {fmtNum(data.bucketSummary.reduce((s, b) => s + b.netPosition, 0) + data.nonSensitive.asset - data.nonSensitive.liability)}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         )}
 
         {/* Tab: Shock Scenario Analysis */}
@@ -355,11 +402,11 @@ export function StressTestView({ externalRunId }: Props) {
         <ul style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', lineHeight: 1.8, paddingLeft: '1.25rem', margin: 0 }}>
           <li>Values are based on currently stored report data (report date: {data.reportDate}).</li>
           <li>VaR is the minimum (worst-case) of 6 Basel IRRBB standard shock scenarios.</li>
-          <li>EaR uses within-1-year repricing buckets with proportional time weights. Custom rate shock is computed client-side.</li>
+          <li>EaR uses within-1-year rate-sensitive repricing buckets with proportional time weights.</li>
           <li>Gap Ratio (12M) = |Asset − Liability| within 1 year / Total rate-sensitive assets.</li>
-          <li>Non-sensitive amounts are placed in the Overnight bucket per regulatory convention.</li>
+          <li>Non-interest rate sensitive amounts are shown separately, matching [Summary_IRRBB] convention.</li>
         </ul>
       </div>
-    </>
+    </div>
   );
 }
