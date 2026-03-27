@@ -4,6 +4,10 @@ import react from '@vitejs/plugin-react';
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
 
+  // Use || (not ??) so that empty string also falls back to the default.
+  // loadEnv returns '' for VITE_API_URL= which ?? does NOT catch.
+  const apiTarget = env.VITE_API_URL || 'http://localhost:3001';
+
   return {
     plugins: [react()],
     server: {
@@ -12,7 +16,7 @@ export default defineConfig(({ mode }) => {
       proxy: {
         // In development, proxy /api calls to the backend so CORS is not needed
         '/api': {
-          target: env.VITE_API_URL ?? 'http://localhost:3001',
+          target: apiTarget,
           changeOrigin: true,
         },
       },

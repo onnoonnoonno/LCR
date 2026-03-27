@@ -12,6 +12,8 @@
 import { Request, Response } from 'express';
 import { uploadRawData }    from '../pipeline/uploadService';
 import { processReportRun, loadReferenceDataFromDb } from '../pipeline/pipelineService';
+import { calculateIrrbbFull, LcrRawRowForIrrbb } from '../pipeline/irrbbService';
+import { calculateStressTest } from '../pipeline/stressTestService';
 import { getPool } from '../db/client';
 import { v4 as uuidv4 } from 'uuid';
 import { lookupAccountMapping } from '../reference/accountMappingService';
@@ -2548,6 +2550,90 @@ export async function handleMonthlyAverageLcr(req: Request, res: Response): Prom
       monthlyAverageLcr: monthlyAverageLcr !== null
         ? Math.round(monthlyAverageLcr * 100) / 100
         : null,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: msg });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/stress-test?runId=<id>
+// Interest Rate Stress Test — VaR (6 shock scenarios), EaR, Gap Ratio.
+//
+// Reads raw_rows for the given run, runs calculateIrrbbFull() to get the
+// 16-bucket repricing breakdown, then passes it to calculateStressTest()
+// for the shock / EaR calculations.
+//
+// No Excel files are read at runtime — all data comes from the DB.
+// ---------------------------------------------------------------------------
+
+export async function handleStressTest(req: Request, res: Response): Promise<void> {
+  const { runId } = req.query as { runId?: string };
+  if (!runId) {
+    res.status(400).json({ success: false, error: 'Provide ?runId=<id>' });
+    return;
+  }
+  if (!await canAccessRun(runId, req)) {
+    res.status(403).json({ success: false, error: 'Access denied.' });
+    return;
+  }
+
+  try {
+    const pool = getPool();
+
+    // 1. Get report_date from report_runs
+    const { rows: runRows } = await pool.query(
+      'SELECT report_date FROM report_runs WHERE id = $1',
+      [runId]
+    );
+    if (runRows.length === 0) {
+      res.status(404).json({ success: false, error: 'Run not found.' });
+      return;
+    }
+    const reportDate = (runRows[0] as { report_date: string }).report_date;
+
+    // 2. Load raw rows (same columns used by calculateIrrbbFull)
+    const { rows: rawDbRows } = await pool.query(
+      `SELECT ac_code, counterparty_no, counterparty_name, ccy,
+              base_ccy_amt, next_interest_reset_date
+       FROM raw_rows WHERE report_run_id = $1`,
+      [runId]
+    );
+
+    const irrbbRows: LcrRawRowForIrrbb[] = (rawDbRows as Array<{
+      ac_code: string | null;
+      counterparty_no: string | null;
+      counterparty_name: string | null;
+      ccy: string | null;
+      base_ccy_amt: number | null;
+      next_interest_reset_date: string | null;
+    }>).map(r => ({
+      acCode:                r.ac_code,
+      counterpartyNo:        r.counterparty_no,
+      counterpartyName:      r.counterparty_name,
+      ccy:                   r.ccy,
+      baseCcyAmt:            r.base_ccy_amt,
+      nextInterestResetDate: r.next_interest_reset_date,
+    }));
+
+    if (irrbbRows.length === 0) {
+      res.status(404).json({ success: false, error: 'No raw rows found for this run.' });
+      return;
+    }
+
+    // 3. Run existing repricing engine (reuse, do not duplicate)
+    const fullResult = calculateIrrbbFull(irrbbRows, reportDate);
+
+    // 4. Run stress test calculations on top of repricing result
+    const stressResult = calculateStressTest(fullResult);
+
+    // 5. Return combined result
+    res.json({
+      success: true,
+      runId,
+      reportDate,
+      ...stressResult,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

@@ -103,7 +103,6 @@ authRouter.post('/login', async (req: Request, res: Response): Promise<void> => 
       role:               user.role,
       mustChangePassword,
     });
-
     res.json({
       success: true,
       token,

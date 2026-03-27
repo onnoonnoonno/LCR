@@ -32,6 +32,7 @@ import {
   handleLcrForecast,
   handleIrrbb,
   handleMonthlyAverageLcr,
+  handleStressTest,
 } from '../controllers/reportController';
 
 export const apiRouter = Router();
@@ -116,6 +117,7 @@ apiRouter.get('/verify/cf-table', handleVerifyCfTable);
 apiRouter.get('/verify/lcr-forecast', handleLcrForecast);
 apiRouter.get('/verify/irrbb', handleIrrbb);
 apiRouter.get('/monthly-average-lcr', handleMonthlyAverageLcr);
+apiRouter.get('/stress-test', requireRole('admin'), handleStressTest);
 
 // ---------------------------------------------------------------------------
 // Debug routes (admin only)

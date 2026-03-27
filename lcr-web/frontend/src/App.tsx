@@ -15,6 +15,7 @@ import { HistoryView } from './components/HistoryView';
 import { BsRe33DebugView } from './components/BsRe33DebugView';
 import { RawUploadDebugView } from './components/RawUploadDebugView';
 import { AccountMappingView } from './components/AccountMappingView';
+import { StressTestView } from './components/StressTestView';
 import { LoginView } from './components/LoginView';
 import { ChangePasswordView } from './components/ChangePasswordView';
 import { getToken, clearToken } from './services/api';
@@ -25,7 +26,7 @@ import nhBankLogo from './assets/NH_Bank.png';
 // ---------------------------------------------------------------------------
 
 type Tab = 'dashboard' | 'lcr' | '3m_lr' | '12m_ir' | 'gap'
-         | 'history' | 'mapping'
+         | 'history' | 'mapping' | 'stress_test'
          | 'forecast' | 'cftable' | 'rawdebug' | 'bsre33';
 
 const DASHBOARD_GROUP: readonly string[] = ['dashboard', 'lcr', '3m_lr', '12m_ir', 'gap'];
@@ -200,6 +201,14 @@ export default function App() {
             >
               Account Mapping
             </button>
+            {authUser.role === 'admin' && (
+              <button
+                className={`nav-tab ${tab === 'stress_test' ? 'nav-tab--active' : ''}`}
+                onClick={() => handleTabChange('stress_test')}
+              >
+                IRRBB Stress Test
+              </button>
+            )}
             <div style={{ marginLeft: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.15rem' }}>
               <button
                 className="nav-tab"
@@ -230,6 +239,13 @@ export default function App() {
           {tab === 'forecast' && <VerifyView externalRunId={selectedRunId} />}
           {tab === 'history'  && <HistoryView onSelectRun={handleSelectFromHistory} userRole={authUser.role} onNavigateToLcr={handleNavigateToLcr} />}
           {tab === 'mapping'  && <AccountMappingView userRole={authUser.role} />}
+          {tab === 'stress_test' && (
+            authUser.role === 'admin'
+              ? <StressTestView externalRunId={selectedRunId} />
+              : <div className="card" style={{ textAlign: 'center', padding: '3rem' }}>
+                  <p style={{ color: 'var(--color-error)', fontWeight: 600 }}>Access denied. This page is restricted to admin users.</p>
+                </div>
+          )}
           {tab === 'cftable'  && <CfTableView />}
           {tab === 'rawdebug' && <RawUploadDebugView />}
           {tab === 'bsre33'   && <BsRe33DebugView />}

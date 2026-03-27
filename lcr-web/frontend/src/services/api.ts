@@ -8,12 +8,12 @@ function base(): string {
 
 async function handleResponse<T>(res: Response): Promise<T> {
   if (!res.ok) {
+    let msg = `HTTP ${res.status}: ${res.statusText}`;
     try {
       const body = await res.json() as { error?: string };
-      throw new Error(body.error ?? `HTTP ${res.status}: ${res.statusText}`);
-    } catch {
-      throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-    }
+      if (body.error) msg = body.error;
+    } catch { /* response body was not JSON — keep the default msg */ }
+    throw new Error(msg);
   }
   return res.json() as Promise<T>;
 }
@@ -496,6 +496,51 @@ export async function fetchMonthlyAverageLcr(reportDate: string): Promise<Monthl
     headers: authHeaders(),
   });
   return handleResponse<MonthlyAverageLcrResponse>(res);
+}
+
+// ---------------------------------------------------------------------------
+// Stress Test (admin-only)
+// ---------------------------------------------------------------------------
+
+export interface StressBucketRow {
+  bucketName:  string;
+  asset:       number;
+  liability:   number;
+  netPosition: number;
+}
+
+export interface StressShockResult {
+  shockType: string;
+  total:     number;
+}
+
+export interface StressEarResult {
+  rateShock: number;
+  ear:       number;
+  earRatio:  number;
+}
+
+export interface StressTestResponse {
+  success:             boolean;
+  runId:               string;
+  reportDate:          string;
+  bucketSummary:       StressBucketRow[];
+  nonSensitive:        { asset: number; liability: number };
+  totalAsset:          number;
+  totalAssetSensitive: number;
+  shockResults:        StressShockResult[];
+  var:                 number;
+  varRatio:            number;
+  gapRatio:            number | null;
+  earResults:          StressEarResult[];
+}
+
+export async function fetchStressTest(runId: string): Promise<StressTestResponse> {
+  const params = new URLSearchParams({ runId });
+  const res = await fetch(`${base()}/api/stress-test?${params}`, {
+    headers: authHeaders(),
+  });
+  return handleResponse<StressTestResponse>(res);
 }
 
 export interface BsRe33Row {
