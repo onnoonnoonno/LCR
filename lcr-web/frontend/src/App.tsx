@@ -206,7 +206,7 @@ export default function App() {
                 className={`nav-tab ${tab === 'stress_test' ? 'nav-tab--active' : ''}`}
                 onClick={() => handleTabChange('stress_test')}
               >
-                IRRBB Stress Test
+                IRRBB
               </button>
             )}
             <div style={{ marginLeft: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.2rem' }}>

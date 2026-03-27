@@ -528,6 +528,8 @@ export interface StressTestResponse {
   nonSensitive:        { asset: number; liability: number };
   totalAsset:          number;
   totalAssetSensitive: number;
+  /** Rate-sensitive-only net positions for buckets 0-6 (for frontend EaR recalculation) */
+  sensitiveNetPositions: number[];
   shockResults:        StressShockResult[];
   var:                 number;
   varRatio:            number;

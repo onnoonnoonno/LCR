@@ -43,6 +43,8 @@ export interface StressTestResult {
   nonSensitive:        { asset: number; liability: number };
   totalAsset:          number;
   totalAssetSensitive: number;
+  /** Rate-sensitive-only net positions for buckets 0-6 (for frontend EaR recalculation) */
+  sensitiveNetPositions: number[];
   shockResults:        ShockResult[];
   var:                 number;
   varRatio:            number;
@@ -160,6 +162,15 @@ export function calculateStressTest(
   }
 
   // ------------------------------------------------------------------
+  // 1b. Rate-sensitive-only net positions (for EaR — excludes non-sensitive)
+  //     Matches app2.py line 461: asset_liability_gap = asset_row_sensitive - liability_row_sensitive
+  // ------------------------------------------------------------------
+  const sensitiveNetPositions: number[] = [];
+  for (let i = 0; i < 16; i++) {
+    sensitiveNetPositions.push(assetBuckets[i] - liabBuckets[i]);
+  }
+
+  // ------------------------------------------------------------------
   // 2. Total asset figures
   // ------------------------------------------------------------------
   const totalAssetSensitive = assetBuckets.reduce((s, v) => s + v, 0);
@@ -191,12 +202,14 @@ export function calculateStressTest(
   const varRatio = totalAsset !== 0 ? varValue / totalAsset : 0;
 
   // ------------------------------------------------------------------
-  // 5. EaR calculation (within-1-year buckets only)
+  // 5. EaR calculation (within-1-year, rate-sensitive-only net positions)
+  //    Uses sensitiveNetPositions (excl. non-sensitive) to match app2.py
+  //    calculate_metrics(), where asset_liability_gap is rate-sensitive only.
   // ------------------------------------------------------------------
   const earResults: EarResult[] = rateShocks.map(rateShock => {
     let earTotal = 0;
     for (let i = 0; i < TIME_WEIGHTS.length; i++) {
-      earTotal += netPosition[i] * TIME_WEIGHTS[i] * rateShock;
+      earTotal += sensitiveNetPositions[i] * TIME_WEIGHTS[i] * rateShock;
     }
     const earRatio = totalAsset !== 0 ? earTotal / totalAsset : 0;
     return { rateShock, ear: earTotal, earRatio };
@@ -210,6 +223,7 @@ export function calculateStressTest(
     nonSensitive: { asset: assetNonSens, liability: liabNonSens },
     totalAsset,
     totalAssetSensitive,
+    sensitiveNetPositions: sensitiveNetPositions.slice(0, TIME_WEIGHTS.length),
     shockResults,
     var: varValue,
     varRatio,

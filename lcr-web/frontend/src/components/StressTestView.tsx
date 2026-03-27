@@ -1,5 +1,5 @@
 /**
- * StressTestView — Interest Rate Stress Test page (admin-only).
+ * StressTestView — IRRBB page (admin-only).
  *
  * Displays VaR (6 shock scenarios), EaR, Gap Ratio, and 16-bucket
  * repricing summary from the /api/stress-test endpoint.
@@ -42,9 +42,10 @@ function fmtNum(v: number): string {
   return Math.round(v).toLocaleString();
 }
 
-function fmtPct(v: number | null, decimals = 2): string {
+function fmtPct(v: number | null): string {
   if (v === null) return 'N/A';
-  return (v * 100).toFixed(decimals) + '%';
+  // Round at 3rd decimal place, display 2 decimal places
+  return (Math.round(v * 100 * 100) / 100).toFixed(2) + '%';
 }
 
 function fmtDollar(v: number): string {
@@ -107,11 +108,11 @@ export function StressTestView({ externalRunId }: Props) {
   // ------------------------------------------------------------------
 
   const customEar = useMemo(() => {
-    if (!data) return { ear: 0, earRatio: 0 };
+    if (!data || !data.sensitiveNetPositions) return { ear: 0, earRatio: 0 };
     const rateShock = rateShockPct / 100;
     let earTotal = 0;
-    for (let i = 0; i < TIME_WEIGHTS.length && i < data.bucketSummary.length; i++) {
-      earTotal += data.bucketSummary[i].netPosition * TIME_WEIGHTS[i] * rateShock;
+    for (let i = 0; i < TIME_WEIGHTS.length && i < data.sensitiveNetPositions.length; i++) {
+      earTotal += data.sensitiveNetPositions[i] * TIME_WEIGHTS[i] * rateShock;
     }
     const earRatio = data.totalAsset !== 0 ? earTotal / data.totalAsset : 0;
     return { ear: earTotal, earRatio };
@@ -162,15 +163,18 @@ export function StressTestView({ externalRunId }: Props) {
 
   return (
     <>
-      {/* Page header */}
-      <div className="card" style={{ marginBottom: '1.5rem' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
-          <div>
-            <h2 className="verify-step-title" style={{ marginBottom: '0.25rem' }}>Interest Rate Stress Test</h2>
-            <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
-              Report Date: <strong>{data.reportDate}</strong> &nbsp;·&nbsp; Admin-only analytical view
-            </span>
+      {/* Page header — compact info bar style matching LCR report date strip */}
+      <div className="card" style={{ padding: '0.85rem 1.25rem', marginBottom: '1.5rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem' }}>
+              <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Report Date</span>
+              <span style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--color-primary)' }}>{data.reportDate}</span>
+            </div>
+            <div style={{ width: 1, height: 28, background: 'var(--color-border)' }} />
+            <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.04em' }}>IRRBB</span>
           </div>
+          <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>Admin-only analytical view</span>
         </div>
       </div>
 
@@ -188,7 +192,7 @@ export function StressTestView({ externalRunId }: Props) {
         <div className="card" style={{ padding: '1rem 1.25rem' }}>
           <div style={labelStyle}>VaR Ratio ({worstShock.shockType})</div>
           <div style={{ ...primaryValStyle, color: data.varRatio < 0 ? 'var(--color-error)' : 'var(--color-success)' }}>
-            {fmtPct(Math.abs(data.varRatio), 4)}
+            {fmtPct(Math.abs(data.varRatio))}
           </div>
           <div style={secondaryValStyle}>
             {fmtDollar(data.var)}
@@ -219,7 +223,7 @@ export function StressTestView({ externalRunId }: Props) {
             </span>
           </div>
           <div style={{ ...primaryValStyle, color: customEar.earRatio < 0 ? 'var(--color-error)' : 'var(--color-success)' }}>
-            {fmtPct(Math.abs(customEar.earRatio), 4)}
+            {fmtPct(Math.abs(customEar.earRatio))}
           </div>
           <div style={secondaryValStyle}>
             {fmtDollar(customEar.ear)}
@@ -250,28 +254,18 @@ export function StressTestView({ externalRunId }: Props) {
       <div className="card" style={{ marginBottom: '1.5rem' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
           <h3 className="verify-step-title" style={{ margin: 0 }}>Detail Information</h3>
-          <div style={{ display: 'flex', gap: '0.25rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
             <button
+              className={`btn ${detailTab === 'buckets' ? 'btn--primary' : 'btn--ghost'}`}
+              style={{ padding: '0.25rem 0.55rem', fontSize: '0.72rem' }}
               onClick={() => setDetailTab('buckets')}
-              style={{
-                padding: '0.35rem 0.85rem', fontSize: '0.78rem', fontWeight: 600,
-                border: '1px solid', borderRadius: '4px', cursor: 'pointer',
-                background: detailTab === 'buckets' ? 'var(--color-primary)' : 'transparent',
-                color: detailTab === 'buckets' ? '#fff' : 'var(--color-text-muted)',
-                borderColor: detailTab === 'buckets' ? 'var(--color-primary)' : '#e2e8f0',
-              }}
             >
               Repricing Bucket Summary
             </button>
             <button
+              className={`btn ${detailTab === 'shocks' ? 'btn--primary' : 'btn--ghost'}`}
+              style={{ padding: '0.25rem 0.55rem', fontSize: '0.72rem' }}
               onClick={() => setDetailTab('shocks')}
-              style={{
-                padding: '0.35rem 0.85rem', fontSize: '0.78rem', fontWeight: 600,
-                border: '1px solid', borderRadius: '4px', cursor: 'pointer',
-                background: detailTab === 'shocks' ? 'var(--color-primary)' : 'transparent',
-                color: detailTab === 'shocks' ? '#fff' : 'var(--color-text-muted)',
-                borderColor: detailTab === 'shocks' ? 'var(--color-primary)' : '#e2e8f0',
-              }}
             >
               Shock Scenario Analysis
             </button>
@@ -344,7 +338,7 @@ export function StressTestView({ externalRunId }: Props) {
                         {fmtNum(s.total)}
                       </td>
                       <td className="text-right mono" style={{ fontWeight: 600, color: ratio < 0 ? 'var(--color-error)' : 'var(--color-success)' }}>
-                        {fmtPct(ratio, 4)}
+                        {fmtPct(ratio)}
                       </td>
                     </tr>
                   );
